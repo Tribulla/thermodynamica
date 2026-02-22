@@ -1,0 +1,209 @@
+{
+    "blocks": {
+        "minecraft:iron_block": {
+            "conductivity": 2.5,
+            "transfer_rate": 1.5,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:copper_block": {
+            "conductivity": 3.5,
+            "transfer_rate": 2.0,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:gold_block": {
+            "conductivity": 3.0,
+            "transfer_rate": 1.8,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:netherite_block": {
+            "conductivity": 5.0,
+            "transfer_rate": 3.0,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:diamond_block": {
+            "conductivity": 10.0,
+            "transfer_rate": 5.0,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:stone": {
+            "conductivity": 1.2,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.02
+        },
+        "minecraft:cobblestone": {
+            "conductivity": 1.0,
+            "transfer_rate": 0.7,
+            "dissipation_rate": 0.03
+        },
+        "minecraft:andesite": {
+            "conductivity": 1.1,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.02
+        },
+        "minecraft:diorite": {
+            "conductivity": 1.1,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.02
+        },
+        "minecraft:granite": {
+            "conductivity": 1.1,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.02
+        },
+        "minecraft:deepslate": {
+            "conductivity": 1.3,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.02
+        },
+        "minecraft:obsidian": {
+            "conductivity": 0.1,
+            "transfer_rate": 0.2,
+            "dissipation_rate": 0.01
+        },
+        "minecraft:dirt": {
+            "conductivity": 0.5,
+            "transfer_rate": 0.6,
+            "dissipation_rate": 0.1
+        },
+        "minecraft:grass_block": {
+            "conductivity": 0.5,
+            "transfer_rate": 0.6,
+            "dissipation_rate": 0.2
+        },
+        "minecraft:sand": {
+            "conductivity": 0.4,
+            "transfer_rate": 0.6,
+            "dissipation_rate": 0.1
+        },
+        "minecraft:red_sand": {
+            "conductivity": 0.4,
+            "transfer_rate": 0.6,
+            "dissipation_rate": 0.1
+        },
+        "minecraft:gravel": {
+            "conductivity": 0.6,
+            "transfer_rate": 0.7,
+            "dissipation_rate": 0.05
+        },
+        "minecraft:clay": {
+            "conductivity": 0.7,
+            "transfer_rate": 0.8,
+            "dissipation_rate": 0.05
+        },
+        "minecraft:white_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:orange_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:magenta_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:light_blue_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:yellow_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:lime_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:pink_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:gray_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:light_gray_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:cyan_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:purple_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:blue_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:brown_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:green_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:red_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:black_wool": {
+            "conductivity": 0.05,
+            "transfer_rate": 0.1,
+            "dissipation_rate": 0.8
+        },
+        "minecraft:snow_block": {
+            "conductivity": 0.1,
+            "transfer_rate": 0.2,
+            "dissipation_rate": 0.7
+        },
+        "minecraft:oak_planks": {
+            "conductivity": 0.2,
+            "transfer_rate": 0.3,
+            "dissipation_rate": 0.4
+        },
+        "minecraft:glass": {
+            "conductivity": 0.3,
+            "transfer_rate": 0.4,
+            "dissipation_rate": 0.2
+        },
+        "minecraft:tinted_glass": {
+            "conductivity": 0.2,
+            "transfer_rate": 0.3,
+            "dissipation_rate": 0.1
+        },
+        "minecraft:ice": {
+            "conductivity": 0.8,
+            "transfer_rate": 0.9,
+            "dissipation_rate": 0.1
+        },
+        "minecraft:packed_ice": {
+            "conductivity": 0.6,
+            "transfer_rate": 0.7,
+            "dissipation_rate": 0.05
+        },
+        "minecraft:blue_ice": {
+            "conductivity": 0.4,
+            "transfer_rate": 0.5,
+            "dissipation_rate": 0.02
+        }
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "blocks": {
+        "create:fluid_pipe": {
+            "conductivity": 1.2,
+            "transfer_rate": 1.1
+        },
+        "create:encased_fluid_pipe": {
+            "conductivity": 0.5,
+            "transfer_rate": 0.6
+        },
+        "create:copper_casing": {
+            "conductivity": 3.0,
+            "transfer_rate": 2.0
+        },
+        "create:andesite_casing": {
+            "conductivity": 0.8,
+            "transfer_rate": 1.0
+        }
+    }
+}

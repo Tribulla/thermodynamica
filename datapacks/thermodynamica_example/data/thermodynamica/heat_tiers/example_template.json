@@ -1,0 +1,9 @@
+{
+    "_comment": "Example of assigning blocks to a heat tier. Replace 'pos2' with the tier you want.",
+    "blocks": [
+        "modid:some_hot_block"
+    ],
+    "tags": [
+        "minecraft:campfires"
+    ]
+}

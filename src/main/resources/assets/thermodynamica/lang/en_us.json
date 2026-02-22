@@ -1,0 +1,17 @@
+{
+  "itemGroup.thermodynamica_tab": "Thermodynamica",
+
+  "block.thermodynamica.heat_source_neg5": "Heat Source [NEG5] (-200°C)",
+  "block.thermodynamica.heat_source_neg4": "Heat Source [NEG4] (-150°C)",
+  "block.thermodynamica.heat_source_neg3": "Heat Source [NEG3] (-100°C)",
+  "block.thermodynamica.heat_source_neg2": "Heat Source [NEG2] (-50°C)",
+  "block.thermodynamica.heat_source_neg1": "Heat Source [NEG1] (-20°C)",
+  "block.thermodynamica.heat_source_zero": "Heat Source [ZERO] (0°C)",
+  "block.thermodynamica.heat_source_pos1": "Heat Source [POS1] (20°C)",
+  "block.thermodynamica.heat_source_pos2": "Heat Source [POS2] (100°C)",
+  "block.thermodynamica.heat_source_pos3": "Heat Source [POS3] (500°C)",
+  "block.thermodynamica.heat_source_pos4": "Heat Source [POS4] (1000°C)",
+  "block.thermodynamica.heat_source_pos5": "Heat Source [POS5] (3000°C)",
+
+  "item.thermodynamica.heat_inspector": "Heat Inspector"
+}

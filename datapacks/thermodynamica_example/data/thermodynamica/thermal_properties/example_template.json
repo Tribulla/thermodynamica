@@ -1,0 +1,15 @@
+{
+    "_comment": "Example of setting custom thermal properties for specific blocks.",
+    "blocks": {
+        "modid:custom_insulator": {
+            "conductivity": 0.1,
+            "transfer_rate": 0.2,
+            "dissipation_rate": 0.8
+        },
+        "modid:custom_conductor": {
+            "conductivity": 5.0,
+            "transfer_rate": 2.5,
+            "dissipation_rate": 0.01
+        }
+    }
+}

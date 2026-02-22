@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "thermodynamica:block/heat_source_zero" }
+  }
+}

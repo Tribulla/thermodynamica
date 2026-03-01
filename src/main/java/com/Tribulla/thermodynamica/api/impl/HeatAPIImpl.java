@@ -11,7 +11,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalDouble;
+import net.minecraft.world.level.ChunkPos;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
@@ -51,12 +55,36 @@ public class HeatAPIImpl extends HeatAPI {
     }
 
     @Override
-    public double getSimulatedCelsius(Level level, BlockPos pos) {
+    public OptionalDouble getSimulatedCelsius(Level level, BlockPos pos) {
         if (simulationManager != null) {
-            return simulationManager.getTemperature(level, pos);
+            return simulationManager.getExactTemperature(level, pos);
+        }
+        return OptionalDouble.empty();
+    }
+
+    @Override
+    public double getVisualCelsius(Level level, BlockPos pos) {
+        OptionalDouble simHeat = getSimulatedCelsius(level, pos);
+        if (simHeat.isPresent()) {
+            return simHeat.getAsDouble();
         }
         ResourceLocation blockId = level.getBlockState(pos).getBlock().builtInRegistryHolder().key().location();
         return getResolvedCelsius(blockId, level, pos);
+    }
+
+    @Override
+    public Map<BlockPos, Double> getSimulatedSourcesInChunk(Level level, ChunkPos pos) {
+        if (simulationManager != null) {
+            return simulationManager.getChunkTemperatures(level.dimension().location(), pos.x, pos.z);
+        }
+        return Collections.emptyMap();
+    }
+
+    @Override
+    public void forceProcessChunks(int ticks) {
+        if (simulationManager != null) {
+            simulationManager.forceProcessChunks(ticks);
+        }
     }
 
     @Override

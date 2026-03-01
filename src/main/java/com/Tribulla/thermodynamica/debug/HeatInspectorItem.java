@@ -1,6 +1,5 @@
 package com.Tribulla.thermodynamica.debug;
 
-import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
@@ -10,7 +9,7 @@ import com.Tribulla.thermodynamica.network.HeatNetwork;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
+
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
@@ -49,7 +48,8 @@ public class HeatInspectorItem extends Item {
         HeatAPI api = HeatAPI.get();
 
         HeatTier tier = api.getResolvedTier(blockId);
-        double celsius = api.getSimulatedCelsius(level, pos);
+        double celsius = api.getSimulatedCelsius(level, pos)
+                .orElseGet(() -> api.getResolvedCelsius(blockId, level, pos));
 
         TierResolution resolution = api.resolveBlockTier(blockId);
         String source = resolution != null ? resolution.getSource().name() : "AMBIENT_DEFAULT";

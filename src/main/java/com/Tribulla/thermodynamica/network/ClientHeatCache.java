@@ -3,6 +3,8 @@ package com.Tribulla.thermodynamica.network;
 import net.minecraft.core.BlockPos;
 
 import javax.annotation.Nullable;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientHeatCache {
@@ -17,6 +19,10 @@ public class ClientHeatCache {
     @Nullable
     public static CachedHeatEntry get(BlockPos pos) {
         return cache.get(pos);
+    }
+
+    public static Map<BlockPos, CachedHeatEntry> getSnapshot() {
+        return new HashMap<>(cache);
     }
 
     public static void clear() {

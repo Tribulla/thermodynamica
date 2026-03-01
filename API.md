@@ -16,8 +16,11 @@ HeatAPI api = HeatAPI.get();
 // Query a block's heat tier
 HeatTier tier = api.getResolvedTier(new ResourceLocation("minecraft:lava"));
 
-// Query live simulated temperature at a world position
-double celsius = api.getSimulatedCelsius(level, pos);
+// Query live simulated temperature at a world position (returns empty if not simulated)
+OptionalDouble celsius = api.getSimulatedCelsius(level, pos);
+
+// Easily query visual heat (prioritizes simulation, falls back to static dictionary)
+double visualCelsius = api.getVisualCelsius(level, pos);
 
 // Register a custom block as a heat source
 api.registerBlockTier(new ResourceLocation("mymod:hot_block"), HeatTier.POS4);
@@ -96,7 +99,9 @@ Obtain via `HeatAPI.get()`. Available after mod initialization.
 |--------|---------|-------------|
 | `getResolvedTier(ResourceLocation block)` | `HeatTier` | Block's assigned tier after conflict resolution |
 | `getResolvedCelsius(ResourceLocation block, Level level, BlockPos pos)` | `double` | Block's tier temperature + biome offset |
-| `getSimulatedCelsius(Level level, BlockPos pos)` | `double` | Live BFS-simulated temperature at position |
+| `getSimulatedCelsius(Level level, BlockPos pos)` | `OptionalDouble` | Live BFS-simulated temperature at position |
+| `getVisualCelsius(Level level, BlockPos pos)` | `double` | Simulated temp if available, else resolved temp |
+| `getSimulatedSourcesInChunk(Level level, ChunkPos pos)` | `Map<BlockPos, Double>` | All currently simulated temperatures within a chunk |
 | `getTierCelsius(HeatTier tier)` | `double` | Nominal Celsius value for a tier |
 | `getBiomeOffset(Level level, BlockPos pos)` | `double` | Biome temperature offset at position |
 | `getAmbientTier()` | `HeatTier` | The ambient tier (default: `POS1`) |
@@ -146,6 +151,13 @@ api.onTemperatureChange(event -> {
 |--------|---------|-------------|
 | `isInTier(ResourceLocation block, HeatTier tier)` | `boolean` | Check if block resolves to a specific tier |
 | `getThermalProperties(ResourceLocation block)` | `ThermalProperties` | Get block's thermal properties |
+| `ClientHeatCache.getSnapshot()` | `Map<BlockPos, CachedHeatEntry>` | Get a thread-safe copy of the active client heat cache |
+| `forceProcessChunks(int ticks)` | `void` | Force immediate background tick processing of the BFS heat engine |
+
+#### Block Tags
+
+The mod provides standard tags in `com.Tribulla.thermodynamica.api.ThermodynamicaTags`:
+- `RADIATES_HEAT` (`#thermodynamica:radiates_heat`): Quickly check if a block emits heat without querying the tier registry.
 
 ---
 

@@ -3,7 +3,6 @@ package com.Tribulla.thermodynamica.debug;
 import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;

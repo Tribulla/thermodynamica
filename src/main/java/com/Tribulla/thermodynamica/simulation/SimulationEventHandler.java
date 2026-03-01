@@ -11,6 +11,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.level.LevelEvent;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -105,6 +107,33 @@ public class SimulationEventHandler {
             sim.markActive(level, pos);
         } else {
             sim.markInactive(level, pos);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLevelLoad(LevelEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel level && level.dimension() == Level.OVERWORLD) {
+            Thermodynamica instance = Thermodynamica.getInstance();
+            if (instance != null && instance.getSimulationManager() != null) {
+                HeatSavedData data = level.getDataStorage().computeIfAbsent(
+                        (tag) -> HeatSavedData.load(tag, instance.getSimulationManager()),
+                        () -> new HeatSavedData(instance.getSimulationManager()),
+                        "thermodynamica_heat");
+                instance.getSimulationManager().setSavedData(data);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLevelSave(LevelEvent.Save event) {
+        if (event.getLevel() instanceof ServerLevel level && level.dimension() == Level.OVERWORLD) {
+            Thermodynamica instance = Thermodynamica.getInstance();
+            if (instance != null && instance.getSimulationManager() != null) {
+                HeatSavedData data = instance.getSimulationManager().getSavedData();
+                if (data != null) {
+                    data.setDirty();
+                }
+            }
         }
     }
 }

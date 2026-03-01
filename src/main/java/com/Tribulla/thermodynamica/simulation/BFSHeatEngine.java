@@ -18,6 +18,9 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import java.util.OptionalDouble;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 public class BFSHeatEngine {
 
@@ -116,11 +119,16 @@ public class BFSHeatEngine {
         Thermodynamica.LOGGER.info("BFS heat engine started with {} worker threads", threads);
     }
 
-    public void stop() {
+    public void stopProcessing() {
         if (pool != null) {
             pool.shutdownNow();
             pool = null;
         }
+        Thermodynamica.LOGGER.info("BFS heat engine processing stopped");
+    }
+
+    public void stop() {
+        stopProcessing();
         grids.clear();
         chunkCellMap.clear();
         dirtyCells.clear();
@@ -204,6 +212,84 @@ public class BFSHeatEngine {
         totalTickNanos.addAndGet(elapsed);
         totalTicks.incrementAndGet();
         totalBlocksProcessed.addAndGet(blocksProcessed);
+    }
+
+    public void forceProcessChunks(int ticks) {
+        for (int i = 0; i < ticks; i++) {
+            tick();
+        }
+    }
+
+    public void saveToNBT(CompoundTag tag) {
+        CompoundTag dimsTag = new CompoundTag();
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, double[]>> dimEntry : grids.entrySet()) {
+            ResourceLocation dim = dimEntry.getKey();
+            ListTag cellList = new ListTag();
+            for (Map.Entry<Long, double[]> cellEntry : dimEntry.getValue().entrySet()) {
+                CompoundTag cellTag = new CompoundTag();
+                cellTag.putLong("Pos", cellEntry.getKey());
+                cellTag.putDouble("Temp", cellEntry.getValue()[CELL_CURRENT]);
+                cellList.add(cellTag);
+            }
+            dimsTag.put(dim.toString(), cellList);
+        }
+        tag.put("Grids", dimsTag);
+
+        CompoundTag sourcesTag = new CompoundTag();
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, Double>> dimEntry : sourceTemps.entrySet()) {
+            ResourceLocation dim = dimEntry.getKey();
+            ListTag cellList = new ListTag();
+            for (Map.Entry<Long, Double> cellEntry : dimEntry.getValue().entrySet()) {
+                CompoundTag cellTag = new CompoundTag();
+                cellTag.putLong("Pos", cellEntry.getKey());
+                cellTag.putDouble("Temp", cellEntry.getValue());
+                cellList.add(cellTag);
+            }
+            sourcesTag.put(dim.toString(), cellList);
+        }
+        tag.put("Sources", sourcesTag);
+    }
+
+    public void loadFromNBT(CompoundTag tag) {
+        if (tag.contains("Grids")) {
+            CompoundTag dimsTag = tag.getCompound("Grids");
+            for (String dimKey : dimsTag.getAllKeys()) {
+                ResourceLocation dim = new ResourceLocation(dimKey);
+                ListTag cellList = dimsTag.getList(dimKey, 10);
+                ConcurrentHashMap<Long, double[]> grid = grids.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
+                for (int i = 0; i < cellList.size(); i++) {
+                    CompoundTag cellTag = cellList.getCompound(i);
+                    long pos = cellTag.getLong("Pos");
+                    double temp = cellTag.getDouble("Temp");
+                    grid.put(pos, new double[] { temp, 0.0 });
+                    positionDimensions.putIfAbsent(pos, dim);
+                    trackCellInChunk(dim, pos);
+                }
+            }
+        }
+
+        if (tag.contains("Sources")) {
+            CompoundTag sourcesTag = tag.getCompound("Sources");
+            for (String dimKey : sourcesTag.getAllKeys()) {
+                ResourceLocation dim = new ResourceLocation(dimKey);
+                ListTag cellList = sourcesTag.getList(dimKey, 10);
+                ConcurrentHashMap<Long, Double> dimSources = sourceTemps.computeIfAbsent(dim,
+                        k -> new ConcurrentHashMap<>());
+                for (int i = 0; i < cellList.size(); i++) {
+                    CompoundTag cellTag = cellList.getCompound(i);
+                    long pos = cellTag.getLong("Pos");
+                    double temp = cellTag.getDouble("Temp");
+                    dimSources.put(pos, temp);
+                    frontier.add(pos);
+                    positionDimensions.putIfAbsent(pos, dim);
+                    trackCellInChunk(dim, pos);
+                }
+            }
+        }
+    }
+
+    public java.util.Map<ResourceLocation, ConcurrentHashMap<Long, Double>> getSourceTemps() {
+        return sourceTemps;
     }
 
     private void injectSources() {
@@ -487,6 +573,14 @@ public class BFSHeatEngine {
             return ambientTemp;
         double[] cell = grid.get(packedPos);
         return cell != null ? cell[CELL_CURRENT] : ambientTemp;
+    }
+
+    public OptionalDouble getExactTemperature(ResourceLocation dim, long packedPos) {
+        ConcurrentHashMap<Long, double[]> grid = grids.get(dim);
+        if (grid == null)
+            return OptionalDouble.empty();
+        double[] cell = grid.get(packedPos);
+        return cell != null ? OptionalDouble.of(cell[CELL_CURRENT]) : OptionalDouble.empty();
     }
 
     public void addSource(ResourceLocation dim, long packedPos, double temperature) {

@@ -4,9 +4,7 @@ import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
-import com.Tribulla.thermodynamica.debug.DebugCreativeTab;
 import com.Tribulla.thermodynamica.debug.DebugRegistry;
-import com.Tribulla.thermodynamica.debug.HeatSourceBlock;
 import com.Tribulla.thermodynamica.network.HeatNetwork;
 import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
 import com.Tribulla.thermodynamica.resource.HeatTierResourceLoader;
@@ -16,7 +14,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -46,7 +46,6 @@ public class Thermodynamica {
         HeatAPI.setInstance(heatApi);
 
         DebugRegistry.register(modBus);
-        DebugCreativeTab.register(modBus);
         HeatNetwork.register();
 
         modBus.addListener(this::onCommonSetup);
@@ -63,6 +62,17 @@ public class Thermodynamica {
     }
 
     @SubscribeEvent
+    public void onServerAboutToStart(ServerAboutToStartEvent event) {
+        // Create the simulation manager early, before levels load.
+        // LevelEvent.Load fires between ServerAboutToStartEvent and ServerStartingEvent,
+        // and needs the manager to exist so saved data can be loaded.
+        simulationManager = new HeatSimulationManager(event.getServer(), configManager);
+        simulationManager.start();
+        heatApi.setSimulationManager(simulationManager);
+        LOGGER.info("Thermodynamica heat simulation engine started");
+    }
+
+    @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         for (HeatTier tier : HeatTier.values()) {
             var blockRO = DebugRegistry.HEAT_SOURCE_BLOCKS.get(tier);
@@ -74,14 +84,37 @@ public class Thermodynamica {
             }
         }
 
-        simulationManager = new HeatSimulationManager(event.getServer(), configManager);
-        simulationManager.start();
-        heatApi.setSimulationManager(simulationManager);
-        LOGGER.info("Thermodynamica heat simulation engine started");
+        // Safety net: if LevelEvent.Load didn't attach saved data (e.g. ordering edge case),
+        // load it now since the overworld is definitely available at this point.
+        if (simulationManager.getSavedData() == null) {
+            net.minecraft.server.level.ServerLevel overworld = event.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            if (overworld != null) {
+                com.Tribulla.thermodynamica.simulation.HeatSavedData data = overworld.getDataStorage().computeIfAbsent(
+                        (tag) -> com.Tribulla.thermodynamica.simulation.HeatSavedData.load(tag, simulationManager),
+                        () -> new com.Tribulla.thermodynamica.simulation.HeatSavedData(simulationManager),
+                        "thermodynamica_heat");
+                simulationManager.setSavedData(data);
+                LOGGER.info("Thermodynamica saved data loaded (fallback path)");
+            }
+        }
     }
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
+        if (simulationManager != null) {
+            // Mark data dirty so it will be written during the upcoming saveAllChunks().
+            // Only stop the thread pool here; keep simulation data intact for the save.
+            com.Tribulla.thermodynamica.simulation.HeatSavedData data = simulationManager.getSavedData();
+            if (data != null) {
+                data.setDirty();
+            }
+            simulationManager.stopProcessing();
+        }
+        LOGGER.info("Thermodynamica heat simulation engine stopping");
+    }
+
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
         if (simulationManager != null) {
             simulationManager.stop();
             simulationManager = null;

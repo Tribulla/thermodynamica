@@ -6,6 +6,34 @@
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+  - [Heat Tiers](#heat-tiers)
+  - [BFS Heat Diffusion](#bfs-heat-diffusion)
+  - [Thermal Properties](#thermal-properties)
+  - [Default Block Assignments](#default-block-assignments)
+- [API Reference](#api-reference)
+  - [HeatAPI — Main Entry Point](#heatapi--main-entry-point)
+  - [HeatTier Enum](#heattier-enum)
+  - [CachedHeatEntry & ClientHeatCache](#cachedheatentry--clientheatcache)
+- [Heat Targeting API](#heat-targeting-api)
+  - [HeatTarget Record](#heattarget-record)
+  - [HeatTargeting Utility Class](#heattargeting-utility-class)
+  - [HeatAPI Targeting Methods](#heatapi-targeting-methods)
+  - [Active Source Index](#active-source-index)
+  - [Example: Heat-Seeking Missile](#example-heat-seeking-missile)
+- [Valkyrien Skies Compatibility](#valkyrien-skies-compatibility)
+  - [How It Works](#how-it-works)
+  - [Ship Coordinate Handling](#ship-coordinate-handling)
+  - [ValkyrienSkiesCompat API](#valkyrienSkiescompat-api)
+- [Configuration](#configuration)
+- [In-Game Commands](#in-game-commands)
+- [Adding as a Dependency](#adding-thermodynamica-as-a-dependency)
+
+---
+
 ## Quick Start
 
 ```java
@@ -62,6 +90,8 @@ Heat physically propagates block-to-block through solid materials using a parall
 - Air blocks act as insulators (heat does not cross air gaps)
 - Water uses a configurable transfer multiplier (default 2×)
 - When a source is removed, residual heat dissipates naturally
+- The engine uses a `ForkJoinPool` with configurable thread count for parallel processing
+- A per-tick work budget limits CPU usage (default: 5000 frontier blocks per tick)
 
 ```mermaid
 graph LR
@@ -84,6 +114,22 @@ Each block has three thermal properties that control how heat interacts with it:
 | `dissipationRate` | 0.05 | Rate of heat loss per exposed face per tick |
 
 Configure per-block or per-tag in `config/Thermodynamica/thermal_properties.json`.
+
+### Default Block Assignments
+
+On first launch, Thermodynamica generates tier config files with these defaults:
+
+| Tier | Blocks |
+|------|--------|
+| **POS5** (3000°C) | `lava` |
+| **POS4** (1000°C) | `fire`, `soul_fire` |
+| **POS3** (500°C) | `magma_block`, `campfire`, `soul_campfire` |
+| **POS2** (100°C) | `furnace`, `blast_furnace`, `smoker`, `torch`, `wall_torch`, `soul_torch`, `soul_wall_torch`, `lantern`, `soul_lantern`, `glowstone` |
+| **NEG1** (−20°C) | `ice` |
+| **NEG2** (−50°C) | `packed_ice` |
+| **NEG3** (−100°C) | `blue_ice`, `snow_block`, `powder_snow` |
+
+All other blocks default to **POS1** (ambient, 20°C). These can be overridden in the tier config files.
 
 ---
 
@@ -151,13 +197,329 @@ api.onTemperatureChange(event -> {
 |--------|---------|-------------|
 | `isInTier(ResourceLocation block, HeatTier tier)` | `boolean` | Check if block resolves to a specific tier |
 | `getThermalProperties(ResourceLocation block)` | `ThermalProperties` | Get block's thermal properties |
-| `ClientHeatCache.getSnapshot()` | `Map<BlockPos, CachedHeatEntry>` | Get a thread-safe copy of the active client heat cache |
 | `forceProcessChunks(int ticks)` | `void` | Force immediate background tick processing of the BFS heat engine |
 
 #### Block Tags
 
 The mod provides standard tags in `com.Tribulla.thermodynamica.api.ThermodynamicaTags`:
 - `RADIATES_HEAT` (`#thermodynamica:radiates_heat`): Quickly check if a block emits heat without querying the tier registry.
+
+### `HeatTier` Enum
+
+```java
+public enum HeatTier {
+    NEG5(-5, "neg5"), NEG4(-4, "neg4"), NEG3(-3, "neg3"),
+    NEG2(-2, "neg2"), NEG1(-1, "neg1"), ZERO(0, "zero"),
+    POS1(1, "pos1"),  POS2(2, "pos2"),  POS3(3, "pos3"),
+    POS4(4, "pos4"),  POS5(5, "pos5");
+}
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getIndex()` | `int` | Tier index (-5 to +5) |
+| `getId()` | `String` | Tier string id (e.g. `"pos3"`) |
+| `nearestTier(double celsius, double[] tierCelsius)` | `HeatTier` | Find the tier closest to a Celsius value |
+| `fromId(String id)` | `HeatTier` | Parse tier from string id |
+| `fromIndex(int index)` | `HeatTier` | Get tier by index |
+
+### `CachedHeatEntry` & `ClientHeatCache`
+
+Client-side heat data cache, automatically updated by server sync packets.
+
+```java
+// Get a thread-safe snapshot of all cached heat data (useful for rendering)
+Map<BlockPos, CachedHeatEntry> snapshot = ClientHeatCache.getSnapshot();
+
+// Query a single position
+CachedHeatEntry entry = ClientHeatCache.get(pos);
+if (entry != null) {
+    double temp = entry.getCelsius();
+    int tierOrdinal = entry.tierOrdinal();
+}
+
+// Clear the cache (e.g., on dimension change)
+ClientHeatCache.clear();
+```
+
+| `CachedHeatEntry` Method | Returns | Description |
+|--------------------------|---------|-------------|
+| `celsius()` / `getCelsius()` | `double` | Temperature in Celsius |
+| `tierOrdinal()` | `int` | Heat tier ordinal, or -1 if unknown |
+
+---
+
+## Heat Targeting API
+
+The targeting API (`com.Tribulla.thermodynamica.api.targeting`) provides utilities for heat-seeking systems like missiles, drones, or thermal sensors.
+
+### Quick Start
+
+```java
+import com.Tribulla.thermodynamica.api.HeatAPI;
+import com.Tribulla.thermodynamica.api.targeting.*;
+
+HeatAPI api = HeatAPI.get();
+Vec3 missilePos = missile.position();
+
+// Find the hottest block with line of sight within 64 blocks
+HeatTarget target = api.getHottestWithLOS(level, missilePos, 64.0, 100.0);
+if (target != null) {
+    Vec3 targetPos = target.getCenter();
+    double temp = target.getCelsius();
+    // Guide missile toward target
+}
+
+// Or use the utility class directly for more control
+List<HeatTarget> sources = HeatTargeting.getHeatSourcesWithLOS(level, missilePos, 64.0, 100.0);
+```
+
+### `HeatTarget` Record
+
+Represents a potential heat target with position, temperature, and distance information. Implements `Comparable<HeatTarget>` (sorted by temperature, hottest first).
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `blockPos()` | `BlockPos` | The block position of the heat source |
+| `celsius()` | `double` | Temperature in Celsius |
+| `distanceSquared()` | `double` | Squared distance from origin |
+| `hasLineOfSight()` | `boolean` | Whether LOS was confirmed (only set when LOS check was performed) |
+| `getCenter()` | `Vec3` | Center position of the block |
+| `getDistance()` | `double` | Actual distance (sqrt of distanceSquared) |
+| `getTargetScore()` | `double` | Targeting score: `celsius / (1 + distance/10)` |
+| `withLOS(boolean)` | `HeatTarget` | Create a copy with updated LOS status |
+
+### `HeatTargeting` Utility Class
+
+Static methods for finding and filtering heat sources.
+
+#### Basic Queries (O(n³) block scan)
+
+These methods scan a cubic area around the origin. Suitable for small radii (≤64 blocks).
+
+| Method | Description |
+|--------|-------------|
+| `getHottestInRadius(level, origin, radius, minCelsius)` | Find the hottest block in radius (no LOS check) |
+| `getHottestWithLOS(level, origin, radius, minCelsius)` | Find the hottest block visible from origin |
+| `getHeatSourcesInRadius(level, origin, radius, minCelsius)` | Get all heat sources, sorted hottest-first |
+| `getHeatSourcesWithLOS(level, origin, radius, minCelsius)` | Get all visible heat sources, sorted hottest-first |
+
+#### Advanced Queries
+
+| Method | Description |
+|--------|-------------|
+| `getBestTarget(level, origin, radius, minCelsius, requireLOS)` | Find best target considering both temperature AND distance |
+| `getTargetsInCone(level, origin, direction, radius, coneAngle, minCelsius, requireLOS)` | Find targets within a forward-looking cone (e.g., 45° half-angle = 90° FOV) |
+| `getNearestHeatSource(level, origin, radius, minCelsius, requireLOS)` | Find the closest heat source above threshold |
+| `hasLineOfSight(level, from, to)` | Check if two positions have unobstructed line of sight |
+
+### Active Source Index
+
+For very large search areas (e.g., long-range missiles at 512+ blocks), the O(n³) block scan is too expensive. Use the **active source index** instead, which queries the simulation's internal data structure in O(sources) time:
+
+```java
+// Get ALL active heat sources in the dimension above a temperature threshold
+// Returns ship-local coordinates for VS ship sources (see VS Compatibility section)
+Map<BlockPos, Double> sources = api.getActiveHeatSources(level, 500.0);
+
+// Or use the targeting utility (uses source index internally, adds distance/LOS filtering)
+List<HeatTarget> targets = HeatTargeting.getActiveHeatSources(level, origin, 128.0, 100.0, true);
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `HeatAPI.getActiveHeatSources(level, minCelsius)` | `Map<BlockPos, Double>` | All active sources in dimension above threshold |
+| `HeatTargeting.getActiveHeatSources(level, origin, radius, minCelsius, checkLOS)` | `List<HeatTarget>` | Active sources within radius, with optional LOS check |
+
+> **Note:** `getActiveHeatSources` returns positions in their **native coordinate space**. For blocks on Valkyrien Skies ships, these are ship-local (shipyard) coordinates. You must transform them to world coordinates for distance/direction calculations. See [VS Compatibility](#valkyrien-skies-compatibility).
+
+### HeatAPI Targeting Methods
+
+For convenience, the main `HeatAPI` exposes common targeting methods directly:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getHottestInRadius(level, origin, radius, minCelsius)` | `HeatTarget` | Hottest block in radius |
+| `getHottestWithLOS(level, origin, radius, minCelsius)` | `HeatTarget` | Hottest visible block |
+| `getHeatSourcesInRadius(level, origin, radius, minCelsius)` | `List<HeatTarget>` | All sources sorted by temp |
+| `getHeatSourcesWithLOS(level, origin, radius, minCelsius)` | `List<HeatTarget>` | Visible sources sorted by temp |
+| `getBestTarget(level, origin, radius, minCelsius, requireLOS)` | `HeatTarget` | Best overall target |
+| `getTargetsInCone(level, origin, direction, radius, coneAngle, minCelsius, requireLOS)` | `List<HeatTarget>` | Targets in forward cone |
+| `hasLineOfSight(level, from, to)` | `boolean` | Check LOS between positions |
+| `getActiveHeatSources(level, minCelsius)` | `Map<BlockPos, Double>` | All active sources in dimension |
+
+### Example: Heat-Seeking Missile
+
+A realistic heat-seeking missile using proportional navigation guidance:
+
+```java
+public class HeatSeekingMissile {
+    private Vec3 currentTargetPos = null;
+    private int targetLostTicks = 0;
+    
+    // Seeker parameters
+    private double seekerFov = 45.0;      // Half-angle in degrees
+    private double seekerRange = 512.0;   // Max detection range in blocks
+    private double seekerMinTemp = 100.0; // Min temperature to track (°C)
+    private double turnRate = 4.0;        // Max degrees per tick
+    
+    public void tickGuidance(Entity missile, Level level) {
+        Vec3 pos = missile.position();
+        Vec3 velocity = missile.getDeltaMovement();
+        if (velocity.lengthSqr() < 0.01) return;
+        
+        Vec3 lookDir = velocity.normalize();
+        HeatAPI api = HeatAPI.get();
+        
+        // === TARGET ACQUISITION ===
+        // Use the active source index for efficient long-range search
+        Map<BlockPos, Double> sources = api.getActiveHeatSources(level, seekerMinTemp);
+        
+        Vec3 bestTarget = null;
+        double bestTemp = seekerMinTemp;
+        double rangeSq = seekerRange * seekerRange;
+        
+        for (Map.Entry<BlockPos, Double> entry : sources.entrySet()) {
+            BlockPos sourcePos = entry.getKey();
+            double temp = entry.getValue();
+            Vec3 worldPos = Vec3.atCenterOf(sourcePos);
+            
+            // For VS ship sources, transform ship-local → world coordinates
+            // (see VS Compatibility section for how to detect and transform)
+            
+            // Range check
+            double distSq = pos.distanceToSqr(worldPos);
+            if (distSq > rangeSq) continue;
+            
+            // Temperature priority
+            if (temp <= bestTemp && bestTarget != null) continue;
+            
+            // FOV check (seeker cone)
+            Vec3 toTarget = worldPos.subtract(pos).normalize();
+            double dot = lookDir.dot(toTarget);
+            if (dot < 0) continue; // Behind missile
+            double angle = Math.toDegrees(Math.acos(Math.min(1.0, dot)));
+            if (angle > seekerFov) continue;
+            
+            bestTarget = worldPos;
+            bestTemp = temp;
+        }
+        
+        if (bestTarget != null) {
+            currentTargetPos = bestTarget;
+            targetLostTicks = 0;
+        } else {
+            targetLostTicks++;
+        }
+        
+        // === PROPORTIONAL NAVIGATION STEERING ===
+        if (currentTargetPos != null && targetLostTicks <= 10) {
+            double speed = velocity.length();
+            Vec3 currentDir = velocity.normalize();
+            Vec3 desiredDir = currentTargetPos.subtract(pos).normalize();
+            
+            double angleDeg = Math.toDegrees(Math.acos(
+                Math.min(1.0, Math.max(-1.0, currentDir.dot(desiredDir)))
+            ));
+            
+            // Speed-dependent turn authority
+            double speedFactor = Math.min(1.0, speed / 1.0);
+            double effectiveTurn = turnRate * speedFactor;
+            
+            // Reduce authority for extreme angles (prevent U-turns)
+            if (angleDeg > 45.0) {
+                effectiveTurn *= 1.0 - ((angleDeg - 45.0) / 135.0) * 0.6;
+            }
+            effectiveTurn = Math.max(0.5, effectiveTurn);
+            
+            if (angleDeg > effectiveTurn) {
+                double t = effectiveTurn / angleDeg;
+                Vec3 newDir = slerp(currentDir, desiredDir, t);
+                missile.setDeltaMovement(newDir.scale(speed));
+            } else {
+                missile.setDeltaMovement(desiredDir.scale(speed));
+            }
+        }
+        
+        if (targetLostTicks > 20) {
+            currentTargetPos = null;
+        }
+    }
+    
+    private Vec3 slerp(Vec3 from, Vec3 to, double t) {
+        double dot = Math.max(-1.0, Math.min(1.0, from.dot(to)));
+        double theta = Math.acos(dot);
+        if (Math.abs(theta) < 0.001) {
+            return from.scale(1 - t).add(to.scale(t)).normalize();
+        }
+        double sinTheta = Math.sin(theta);
+        double a = Math.sin((1 - t) * theta) / sinTheta;
+        double b = Math.sin(t * theta) / sinTheta;
+        return from.scale(a).add(to.scale(b)).normalize();
+    }
+}
+```
+
+**Key design notes:**
+- **Turn rate of 4°/tick** (80°/sec) produces smooth, realistic arcs. Values above 10°/tick cause zigzag patterns seen in pure pursuit guidance.
+- **Speed-dependent authority** means slow missiles can't turn as sharply — they'll arc wide instead of U-turning.
+- **Anti-U-turn damping** reduces turn authority when the target is behind the missile, preventing physically impossible 180° reversals.
+- **Slerp interpolation** ensures the missile's velocity vector rotates smoothly on the unit sphere instead of cutting corners.
+
+---
+
+## Valkyrien Skies Compatibility
+
+Thermodynamica fully supports Valkyrien Skies 2 ships. Heat simulation, diffusion, and targeting all work on ship blocks.
+
+### How It Works
+
+VS2 stores ship blocks in a special **shipyard** coordinate space (very high coordinates far from the overworld). The blocks are accessible via standard `level.getBlockState(shipLocalPos)` calls — no special handling needed for block access.
+
+However, for **distance calculations**, **line-of-sight checks**, and **rendering**, you need the block's position in world space.
+
+```
+┌─ Shipyard Space ─────────────┐     ┌─ World Space ──────────────┐
+│ Ship blocks stored at         │     │ Ship rendered at           │
+│ (700000, 64, 700000) etc.    │ ──► │ (100, 65, 200) etc.       │
+│                               │     │                            │
+│ getBlockState() works here   │     │ Distance/LOS checks here  │
+│ Heat simulation runs here    │     │ Missile guidance uses this │
+└───────────────────────────────┘     └────────────────────────────┘
+              Ship Transform (getShipToWorld matrix)
+```
+
+### Ship Coordinate Handling
+
+**Heat simulation** operates in native (ship-local) coordinates:
+- `HeatSimulationManager.markActive()`, `setTemperature()`, `getTemperature()` all use native `BlockPos` — never transform coords
+- `level.getBlockState(pos)` correctly returns ship blocks at their ship-local positions
+- BFS propagation works naturally because adjacent ship blocks have adjacent ship-local positions
+
+**Targeting / missiles** need world coordinates:
+- `getActiveHeatSources()` returns positions in native coords (ship-local for ship blocks)
+- Consumers must detect ship sources and transform to world coords for distance/direction math
+- Use `isBlockInShipyard()` to detect if a source is on a ship
+- Use ship's `ShipTransform.getShipToWorld()` matrix to transform positions
+
+### `ValkyrienSkiesCompat` API
+
+Located in `com.Tribulla.thermodynamica.api.compat`. Uses reflection to avoid compile-time dependency.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `isVSInstalled()` | `boolean` | Whether VS2 is loaded and compatible |
+| `isOnShip(level, pos)` | `boolean` | Check if a block position is managed by a ship |
+| `getShipManagingPos(level, pos)` | `Object` | Get the Ship object for a position, or null |
+| `toWorldPos(level, pos)` | `BlockPos` | Transform ship-local BlockPos to world BlockPos |
+| `toWorldCoordinates(level, shipBlockPos, shipLocalPos)` | `Vec3` | Transform ship-local Vec3 to world Vec3 |
+| `toShipCoordinates(level, shipBlockPos, worldPos)` | `Vec3` | Transform world Vec3 to ship-local Vec3 |
+| `transformDirectionToWorld(level, shipBlockPos, dir)` | `Vec3` | Transform direction vector (no translation) |
+| `transformDirectionToShip(level, shipBlockPos, dir)` | `Vec3` | Transform world direction to ship-local |
+| `getShipVelocity(level, shipBlockPos)` | `Vec3` | Get ship's linear velocity |
+| `getShipWorldPosition(level, shipBlockPos)` | `Vec3` | Get ship's center of mass in world coords |
+
+> **Important:** Do NOT call `toWorldPos()` or `toWorldCoordinates()` before `level.getBlockState()`. VS2 blocks exist at their ship-local positions and are directly accessible. Only transform for distance/direction calculations.
 
 ---
 
@@ -182,14 +544,14 @@ All config files are in `config/Thermodynamica/`.
 }
 ```
 
-### `tiers/` — Block Tier Assignments
+### `heat/` — Block Tier Assignments
 
-Each tier has a JSON file (e.g. `pos5.json`):
+Each tier has a JSON file (e.g. `heat/pos5.json`):
 
 ```json
 {
-    "blocks": ["minecraft:lava", "minecraft:magma_block"],
-    "tags": ["#minecraft:fire"]
+    "blocks": ["minecraft:lava"],
+    "tags": []
 }
 ```
 
@@ -234,8 +596,16 @@ Each tier has a JSON file (e.g. `pos5.json`):
 In your `build.gradle`:
 
 ```groovy
+repositories {
+    flatDir { dirs 'libs' }
+}
+
 dependencies {
-    compileOnly fg.deobf("com.github.thermodynamica:thermodynamica:1.0.0")
+    // Use fg.deobf() with a Maven coordinate (requires flatDir repo or real Maven repo)
+    compileOnly fg.deobf("thermodynamica:thermodynamica:1.0.0")
+    
+    // Or for runtime dependency:
+    // implementation fg.deobf("thermodynamica:thermodynamica:1.0.0")
 }
 ```
 
@@ -250,4 +620,4 @@ In your `mods.toml`:
     side="BOTH"
 ```
 
-Use `mandatory=false` if your mod can function without Thermodynamica (soft dependency).
+Use `mandatory=false` if your mod can function without Thermodynamica (soft dependency). Wrap all API calls in try-catch or check `ModList.get().isLoaded("thermodynamica")` before use.

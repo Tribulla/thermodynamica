@@ -166,4 +166,12 @@ public class HeatAPIImpl extends HeatAPI {
         Holder<Biome> biomeHolder = level.getBiome(pos);
         return configManager.getBiomeConfig().getOffset(biomeHolder);
     }
+
+    @Override
+    public Map<BlockPos, Double> getActiveHeatSources(Level level, double minCelsius) {
+        if (simulationManager != null) {
+            return simulationManager.getActiveHeatSources(level.dimension().location(), minCelsius);
+        }
+        return Collections.emptyMap();
+    }
 }

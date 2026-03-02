@@ -3,6 +3,7 @@ package com.Tribulla.thermodynamica;
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
+import com.Tribulla.thermodynamica.api.targeting.HeatTargetingInternal;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.debug.DebugRegistry;
 import com.Tribulla.thermodynamica.network.HeatNetwork;
@@ -69,6 +70,11 @@ public class Thermodynamica {
         simulationManager = new HeatSimulationManager(event.getServer(), configManager);
         simulationManager.start();
         heatApi.setSimulationManager(simulationManager);
+        
+        // Initialize targeting API with source provider
+        HeatTargetingInternal.setSourceProvider((level, minCelsius) -> 
+            simulationManager.getActiveHeatSources(level.dimension().location(), minCelsius));
+        
         LOGGER.info("Thermodynamica heat simulation engine started");
     }
 

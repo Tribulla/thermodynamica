@@ -11,7 +11,6 @@ import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
-import com.Tribulla.thermodynamica.api.compat.ValkyrienSkiesCompat;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.config.SimulationSettings;
 
@@ -119,14 +118,14 @@ public class HeatSimulationManager {
     }
 
     public double getTemperature(net.minecraft.world.level.Level level, BlockPos pos) {
-        pos = ValkyrienSkiesCompat.toWorldPos(level, pos);
+        // Do NOT transform to world coords - VS2 blocks exist at ship-local coords
+        // and level.getBlockState(shipLocalPos) returns the correct block
         ResourceLocation dim = level.dimension().location();
         double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(pos));
         return engine.getTemperature(dim, pos.asLong()) + biomeOffset;
     }
 
     public OptionalDouble getExactTemperature(net.minecraft.world.level.Level level, BlockPos pos) {
-        pos = ValkyrienSkiesCompat.toWorldPos(level, pos);
         ResourceLocation dim = level.dimension().location();
         OptionalDouble exact = engine.getExactTemperature(dim, pos.asLong());
         if (exact.isEmpty()) {
@@ -137,7 +136,6 @@ public class HeatSimulationManager {
     }
 
     public void setTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
-        pos = ValkyrienSkiesCompat.toWorldPos(level, pos);
         ResourceLocation dim = level.dimension().location();
         double ambient = configManager.getTierDefinitions().getCelsius(settings.getAmbientTier());
         long packed = pos.asLong();
@@ -150,7 +148,6 @@ public class HeatSimulationManager {
     }
 
     public void markActive(net.minecraft.world.level.Level level, BlockPos pos) {
-        pos = ValkyrienSkiesCompat.toWorldPos(level, pos);
         ResourceLocation dim = level.dimension().location();
         BlockState state = level.getBlockState(pos);
         ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
@@ -168,7 +165,6 @@ public class HeatSimulationManager {
     }
 
     public void markInactive(net.minecraft.world.level.Level level, BlockPos pos) {
-        pos = ValkyrienSkiesCompat.toWorldPos(level, pos);
         ResourceLocation dim = level.dimension().location();
         unregisterSource(dim, pos, pos.asLong());
     }
@@ -379,6 +375,30 @@ public class HeatSimulationManager {
                 nearestInfo.temperature(), engine.getTemperature(dim, nearestPacked),
                 nearestInfo.conductivity(), nearestInfo.transferRate(),
                 engine.getCurrentFrontierSize(), engine.getGridSize());
+    }
+
+    /**
+     * Gets all active heat sources in the given dimension above a minimum temperature.
+     * Used by the targeting API for efficient heat source lookup.
+     *
+     * @param dim The dimension to query
+     * @param minCelsius Minimum temperature threshold
+     * @return Map of block positions to their temperatures
+     */
+    public Map<BlockPos, Double> getActiveHeatSources(ResourceLocation dim, double minCelsius) {
+        ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+        if (dimSources == null || dimSources.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        Map<BlockPos, Double> result = new java.util.HashMap<>();
+        for (Map.Entry<Long, SourceInfo> entry : dimSources.entrySet()) {
+            double temp = entry.getValue().temperature();
+            if (temp >= minCelsius) {
+                result.put(BlockPos.of(entry.getKey()), temp);
+            }
+        }
+        return result;
     }
 
     private ServerLevel getLevelForDim(ResourceLocation dim) {

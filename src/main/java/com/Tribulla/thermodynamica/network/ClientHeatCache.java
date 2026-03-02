@@ -4,29 +4,31 @@ import net.minecraft.core.BlockPos;
 
 import javax.annotation.Nullable;
 import java.util.Map;
-import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * @deprecated Use {@link com.Tribulla.thermodynamica.api.ClientHeatCache} instead.
+ * This class now delegates to the API package for backwards compatibility.
+ */
+@Deprecated
 public class ClientHeatCache {
 
-    private static final ConcurrentHashMap<BlockPos, CachedHeatEntry> cache = new ConcurrentHashMap<>();
     private static volatile DebugInfoPacket lastDebugInfo;
 
     public static void update(BlockPos pos, double celsius, int tierOrdinal) {
-        cache.put(pos.immutable(), new CachedHeatEntry(celsius, tierOrdinal));
+        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, tierOrdinal);
     }
 
     @Nullable
-    public static CachedHeatEntry get(BlockPos pos) {
-        return cache.get(pos);
+    public static com.Tribulla.thermodynamica.api.CachedHeatEntry get(BlockPos pos) {
+        return com.Tribulla.thermodynamica.api.ClientHeatCache.get(pos);
     }
 
-    public static Map<BlockPos, CachedHeatEntry> getSnapshot() {
-        return new HashMap<>(cache);
+    public static Map<BlockPos, com.Tribulla.thermodynamica.api.CachedHeatEntry> getSnapshot() {
+        return com.Tribulla.thermodynamica.api.ClientHeatCache.getSnapshot();
     }
 
     public static void clear() {
-        cache.clear();
+        com.Tribulla.thermodynamica.api.ClientHeatCache.clear();
     }
 
     public static void setDebugInfo(DebugInfoPacket packet) {
@@ -38,6 +40,10 @@ public class ClientHeatCache {
         return lastDebugInfo;
     }
 
+    /**
+     * @deprecated Use {@link com.Tribulla.thermodynamica.api.CachedHeatEntry} instead.
+     */
+    @Deprecated
     public record CachedHeatEntry(double celsius, int tierOrdinal) {
     }
 }

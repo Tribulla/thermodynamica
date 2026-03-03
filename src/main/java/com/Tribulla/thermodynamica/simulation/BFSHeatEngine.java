@@ -146,6 +146,12 @@ public class BFSHeatEngine {
 
         long start = System.nanoTime();
 
+        // Periodically clean up the property cache to prevent unbounded growth
+        long tickNum = totalTicks.get();
+        if (tickNum % 10 == 0) {
+            trimPropsCache();
+        }
+
         injectSources();
 
         Set<Long> currentFrontier = frontier;
@@ -365,7 +371,11 @@ public class BFSHeatEngine {
             if (state.isAir())
                 return AIR_PROPS;
 
-            boolean isWater = state.is(Blocks.WATER);
+            // Treat ALL fluids as insulators — skip lava/water entirely for performance.
+            // Underground lava pools are the #1 source of simulation load.
+            if (!state.getFluidState().isEmpty())
+                return AIR_PROPS;
+
             ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
             ThermalPropertiesRegistry registry = configManager.getThermalPropertiesRegistry();
 
@@ -373,11 +383,11 @@ public class BFSHeatEngine {
                 ThermalProperties props = registry.get(blockId);
                 if (props != null) {
                     return new CachedProps(props.getConductivity(), props.getTransferRate(),
-                            false, isWater);
+                            false, false);
                 }
             }
             return new CachedProps(DEFAULT_PROPS.conductivity, DEFAULT_PROPS.transferRate,
-                    false, isWater);
+                    false, false);
         } catch (Exception e) {
             return DEFAULT_PROPS;
         }
@@ -410,8 +420,6 @@ public class BFSHeatEngine {
             CachedProps myProps = getCachedProps(dim, packedPos);
             double myCond = myProps.conductivity;
             double myTransfer = myProps.transferRate;
-            if (myProps.isWater)
-                myTransfer *= waterTransferMult;
 
             int bx = BlockPos.getX(packedPos);
             int by = BlockPos.getY(packedPos);
@@ -455,8 +463,6 @@ public class BFSHeatEngine {
                 }
 
                 double nTransfer = nProps.transferRate;
-                if (nProps.isWater)
-                    nTransfer *= waterTransferMult;
 
                 double effectiveCond = Math.min(myCond, nProps.conductivity);
                 double avgTransfer = (myTransfer + nTransfer) * 0.5;
@@ -526,7 +532,11 @@ public class BFSHeatEngine {
                     }
                 }
 
-                if (Math.abs(cell[CELL_CURRENT] - ambientTemp) < deltaThreshold) {
+                // Evict cells that have settled back to ambient temperature.
+                // Only evict if the cell is very close to ambient AND has negligible delta,
+                // so we don't kill the propagation wavefront.
+                if (Math.abs(cell[CELL_CURRENT] - ambientTemp) < deltaThreshold
+                        && Math.abs(delta) < 0.01) {
                     if (!isSource) {
                         if (toEvict == null)
                             toEvict = new ArrayList<>();
@@ -662,18 +672,21 @@ public class BFSHeatEngine {
         if (grid == null)
             return Collections.emptyMap();
 
-        int minX = chunkX << 4;
-        int minZ = chunkZ << 4;
-        int maxX = minX + 15;
-        int maxZ = minZ + 15;
+        // Use chunkCellMap for O(cells_in_chunk) instead of O(grid_size)
+        ConcurrentHashMap<Long, Set<Long>> dimChunks = chunkCellMap.get(dim);
+        if (dimChunks == null)
+            return Collections.emptyMap();
+
+        long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+        Set<Long> cellsInChunk = dimChunks.get(chunkKey);
+        if (cellsInChunk == null || cellsInChunk.isEmpty())
+            return Collections.emptyMap();
 
         Map<BlockPos, Double> result = new HashMap<>();
-        for (Map.Entry<Long, double[]> entry : grid.entrySet()) {
-            long packed = entry.getKey();
-            int x = BlockPos.getX(packed);
-            int z = BlockPos.getZ(packed);
-            if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
-                result.put(BlockPos.of(packed), entry.getValue()[CELL_CURRENT]);
+        for (long packed : cellsInChunk) {
+            double[] cell = grid.get(packed);
+            if (cell != null) {
+                result.put(BlockPos.of(packed), cell[CELL_CURRENT]);
             }
         }
         return result;
@@ -683,6 +696,37 @@ public class BFSHeatEngine {
         ConcurrentHashMap<Long, CachedProps> dimCache = propsCache.get(dim);
         if (dimCache != null)
             dimCache.remove(packedPos);
+    }
+
+    /**
+     * Trim the property cache to prevent unbounded memory growth.
+     * Removes entries that no longer have corresponding grid cells.
+     */
+    private void trimPropsCache() {
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, CachedProps>> dimEntry : propsCache.entrySet()) {
+            ResourceLocation dim = dimEntry.getKey();
+            ConcurrentHashMap<Long, CachedProps> dimCache = dimEntry.getValue();
+            ConcurrentHashMap<Long, double[]> grid = grids.get(dim);
+
+            if (grid == null) {
+                dimCache.clear();
+                continue;
+            }
+
+            // Only trim if cache is significantly larger than the grid
+            if (dimCache.size() > grid.size() * 3) {
+                Iterator<Long> it = dimCache.keySet().iterator();
+                int removed = 0;
+                int limit = dimCache.size() - grid.size() * 2;
+                while (it.hasNext() && removed < limit) {
+                    long pos = it.next();
+                    if (!grid.containsKey(pos)) {
+                        it.remove();
+                        removed++;
+                    }
+                }
+            }
+        }
     }
 
     public double getLastTickMs() {

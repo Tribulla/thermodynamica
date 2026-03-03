@@ -1,6 +1,3 @@
 {
-    "blocks": [
-        "minecraft:lava",
-        "minecraft:lava_cauldron"
-    ]
+    "blocks": []
 }

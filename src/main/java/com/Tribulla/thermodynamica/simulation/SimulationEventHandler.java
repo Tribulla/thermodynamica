@@ -95,6 +95,11 @@ public class SimulationEventHandler {
 
     private static void checkAndRegisterSource(ServerLevel level, BlockPos pos,
             BlockState state, Thermodynamica instance) {
+        // Skip fluid blocks entirely — lava pools underground are the #1 source of
+        // simulation lag and fluid heat is not important for gameplay.
+        if (!state.getFluidState().isEmpty())
+            return;
+
         HeatSimulationManager sim = instance.getSimulationManager();
         ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
         if (blockId == null)

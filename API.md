@@ -88,10 +88,10 @@ Heat physically propagates block-to-block through solid materials using a parall
 - Sources continuously emit their tier temperature into the world
 - Heat flows through solid blocks based on **thermal conductivity** and **transfer rate**
 - Air blocks act as insulators (heat does not cross air gaps)
-- Water uses a configurable transfer multiplier (default 2×)
+- **Fluid blocks (water, lava) are treated as insulators** — they return air-equivalent thermal properties and are skipped by the simulation for performance. Underground lava pools were the #1 source of simulation load.
 - When a source is removed, residual heat dissipates naturally
 - The engine uses a `ForkJoinPool` with configurable thread count for parallel processing
-- A per-tick work budget limits CPU usage (default: 5000 frontier blocks per tick)
+- A per-tick work budget limits CPU usage (default: 50,000 frontier blocks per tick)
 
 ```mermaid
 graph LR
@@ -121,13 +121,13 @@ On first launch, Thermodynamica generates tier config files with these defaults:
 
 | Tier | Blocks |
 |------|--------|
-| **POS5** (3000°C) | `lava` |
-| **POS4** (1000°C) | `fire`, `soul_fire` |
+| **POS5** (3000°C) | *(empty — fluids excluded from simulation for performance)* |
+| **POS4** (1000°C) | `fire`, `soul_fire`, `#minecraft:fire` |
 | **POS3** (500°C) | `magma_block`, `campfire`, `soul_campfire` |
-| **POS2** (100°C) | `furnace`, `blast_furnace`, `smoker`, `torch`, `wall_torch`, `soul_torch`, `soul_wall_torch`, `lantern`, `soul_lantern`, `glowstone` |
-| **NEG1** (−20°C) | `ice` |
-| **NEG2** (−50°C) | `packed_ice` |
-| **NEG3** (−100°C) | `blue_ice`, `snow_block`, `powder_snow` |
+| **POS2** (100°C) | `furnace`, `blast_furnace`, `smoker`, `torch`, `wall_torch`, `soul_torch`, `soul_wall_torch`, `lantern`, `soul_lantern`, `glowstone`, `jack_o_lantern`, `shroomlight`, `redstone_lamp` |
+| **ZERO** (0°C) | `ice` |
+| **NEG1** (−20°C) | `packed_ice`, `snow_block`, `snow`, `powder_snow` |
+| **NEG2** (−50°C) | `blue_ice` |
 
 All other blocks default to **POS1** (ambient, 20°C). These can be overridden in the tier config files.
 
@@ -531,18 +531,28 @@ All config files are in `config/Thermodynamica/`.
 
 ```jsonc
 {
-    "worker_threads": 2,           // ForkJoinPool thread count
-    "work_budget_per_tick": 5000,  // Max frontier blocks processed per sim tick
-    "simulation_interval_ticks": 20, // Sim ticks between BFS updates (20 = 1/sec)
-    "delta_threshold": 0.5,        // Min °C change to trigger propagation
-    "air_insulates": true,         // Air blocks block heat transfer
-    "water_transfer_multiplier": 2.0,
+    "worker_threads": 2,              // ForkJoinPool thread count
+    "work_budget_per_tick": 50000,    // Max frontier blocks processed per sim tick
+    "graceful_degradation": true,     // Reduce work when server is behind
+    "simulation_interval_ticks": 20,  // Sim ticks between BFS updates (20 = 1/sec)
+    "delta_threshold": 0.5,           // Min °C change to trigger propagation
+    "air_insulates": true,            // Air blocks block heat transfer
+    "water_transfer_multiplier": 2.0, // ⚠️ Legacy — fluids are now treated as insulators regardless
     "dissipation_multiplier": 1.0,
-    "sync_threshold": 5.0,        // Min °C change to sync to clients
-    "sync_range": 64,             // Block radius for client sync
+    "smoothing_enabled": true,        // Enable temperature smoothing
+    "smoothing_radius": 2,            // Block radius for smoothing
+    "smoothing_budget": 500,          // Max blocks smoothed per tick
+    "sync_threshold": 20.0,           // Min °C change to sync to clients
+    "sync_range": 64,                 // Block radius for client sync
+    "debug_mode": false,              // Full temp sync (for development)
+    "max_propagation_radius": 16,     // Max BFS radius from each source
+    "ticks_per_radius_step": 5,       // Ticks before expanding BFS by 1 block
+    "temperature_ramp_rate": 0.15,    // Per-tick temp ramp factor (0.01–1.0)
     "ambient_tier": "pos1"
 }
 ```
+
+> **Note:** `water_transfer_multiplier` is still loadable from config but has no effect — all fluid blocks (water, lava) are treated as insulators by the BFS engine for performance reasons.
 
 ### `heat/` — Block Tier Assignments
 

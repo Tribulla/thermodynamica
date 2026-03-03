@@ -6,7 +6,7 @@ import com.google.gson.JsonObject;
 public class SimulationSettings implements ConfigSection {
 
     private int workerThreads = 2;
-    private int workBudgetPerTick = 500000;
+    private int workBudgetPerTick = 50000;
     private boolean gracefulDegradation = true;
     private int simulationIntervalTicks = 20;
     private double deltaThreshold = 0.5;

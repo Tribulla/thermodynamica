@@ -45,9 +45,7 @@ public class TierFileLoader {
 
         switch (tier) {
             case POS5:
-                // Extreme heat: lava
-                blocks.add("minecraft:lava");
-                blocks.add("minecraft:lava_cauldron");
+                // Extreme heat: (fluids excluded from simulation for performance)
                 break;
             case POS4:
                 // Very hot: active fire

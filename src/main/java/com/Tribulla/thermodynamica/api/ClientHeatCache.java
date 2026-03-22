@@ -1,6 +1,7 @@
 package com.Tribulla.thermodynamica.api;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -27,7 +28,12 @@ public class ClientHeatCache {
      * @param tierOrdinal the heat tier ordinal, or -1 if unknown
      */
     public static void update(BlockPos pos, double celsius, int tierOrdinal) {
-        cache.put(pos.immutable(), new CachedHeatEntry(celsius, tierOrdinal));
+        update(pos, celsius, tierOrdinal, pos, Vec3.atCenterOf(pos));
+    }
+
+    public static void update(BlockPos pos, double celsius, int tierOrdinal, BlockPos renderStatePos, Vec3 worldCenter) {
+        cache.put(pos.immutable(), new CachedHeatEntry(celsius, tierOrdinal,
+                renderStatePos.immutable(), worldCenter));
     }
     
     /**

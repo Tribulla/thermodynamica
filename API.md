@@ -117,19 +117,7 @@ Configure per-block or per-tag in `config/Thermodynamica/thermal_properties.json
 
 ### Default Block Assignments
 
-On first launch, Thermodynamica generates tier config files with these defaults:
-
-| Tier | Blocks |
-|------|--------|
-| **POS5** (3000°C) | *(empty — fluids excluded from simulation for performance)* |
-| **POS4** (1000°C) | `fire`, `soul_fire`, `#minecraft:fire` |
-| **POS3** (500°C) | `magma_block`, `campfire`, `soul_campfire` |
-| **POS2** (100°C) | `furnace`, `blast_furnace`, `smoker`, `torch`, `wall_torch`, `soul_torch`, `soul_wall_torch`, `lantern`, `soul_lantern`, `glowstone`, `jack_o_lantern`, `shroomlight`, `redstone_lamp` |
-| **ZERO** (0°C) | `ice` |
-| **NEG1** (−20°C) | `packed_ice`, `snow_block`, `snow`, `powder_snow` |
-| **NEG2** (−50°C) | `blue_ice` |
-
-All other blocks default to **POS1** (ambient, 20°C). These can be overridden in the tier config files.
+All blocks besides debug heat sources are assigned default values.
 
 ---
 

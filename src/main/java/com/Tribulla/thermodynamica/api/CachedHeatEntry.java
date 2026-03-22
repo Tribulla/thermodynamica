@@ -1,10 +1,13 @@
 package com.Tribulla.thermodynamica.api;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+
 /**
  * Represents a cached heat entry from the client-side heat cache.
  * Contains the temperature in Celsius and optionally the heat tier ordinal.
  */
-public record CachedHeatEntry(double celsius, int tierOrdinal) {
+public record CachedHeatEntry(double celsius, int tierOrdinal, BlockPos renderStatePos, Vec3 worldCenter) {
     
     /**
      * Get the temperature in Celsius.
@@ -20,6 +23,14 @@ public record CachedHeatEntry(double celsius, int tierOrdinal) {
      */
     public int getTierOrdinal() {
         return tierOrdinal;
+    }
+
+    public BlockPos getRenderStatePos() {
+        return renderStatePos;
+    }
+
+    public Vec3 getWorldCenter() {
+        return worldCenter;
     }
     
     /**

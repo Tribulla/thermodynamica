@@ -37,6 +37,11 @@ public class ValkyrienSkiesCompat {
     private static Method toJOMLMethod = null;
     private static Method toMinecraftMethod = null;
     private static Method getVelocityMethod = null;
+    private static Method isBlockInShipyardMethod = null;
+    private static Method getAllShipsMethod = null;
+    private static Method getShipWorldMethod = null;
+    private static Method getLoadedShipsMethod = null;
+    private static Method getByChunkPosMethod = null;
 
     /**
      * Initialize VS reflection hooks.
@@ -72,6 +77,24 @@ public class ValkyrienSkiesCompat {
             
             // Ship velocity
             getVelocityMethod = shipClass.getMethod("getVelocity");
+            isBlockInShipyardMethod = vsGameUtilsClass.getMethod("isBlockInShipyard", Level.class, BlockPos.class);
+
+            // Ship iteration
+            getAllShipsMethod = vsGameUtilsClass.getMethod("getAllShips", Level.class);
+            try {
+                Class<?> queryableShipDataClass = Class.forName("org.valkyrienskies.core.internal.ships.VsiQueryableShipData");
+                getByChunkPosMethod = queryableShipDataClass.getMethod("getByChunkPos", int.class, int.class);
+            } catch (Exception ignored) {
+                getByChunkPosMethod = null;
+            }
+            try {
+                getShipWorldMethod = vsGameUtilsClass.getMethod("getShipObjectWorld", Level.class);
+                Class<?> vsiShipWorldClass = Class.forName("org.valkyrienskies.core.internal.world.VsiShipWorld");
+                getLoadedShipsMethod = vsiShipWorldClass.getMethod("getLoadedShips");
+            } catch (Exception ignored) {
+                getShipWorldMethod = null;
+                getLoadedShipsMethod = null;
+            }
             
             vsInstalled = true;
             LOGGER.info("Successfully hooked into Valkyrien Skies coordinate transformations.");
@@ -97,7 +120,10 @@ public class ValkyrienSkiesCompat {
      * @return true if the position is on a ship
      */
     public static boolean isOnShip(Level level, BlockPos pos) {
-        return getShipManagingPos(level, pos) != null;
+        if (getShipForBlockPos(level, pos) != null) {
+            return true;
+        }
+        return isBlockInShipyard(level, pos);
     }
 
     /**
@@ -115,6 +141,59 @@ public class ValkyrienSkiesCompat {
             return getShipManagingPosMethod.invoke(null, level, pos);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    @Nullable
+    public static Object getShipForBlockPos(Level level, BlockPos pos) {
+        if (!initialized) init();
+        if (!vsInstalled) return null;
+
+        Object ship = getShipManagingPos(level, pos);
+        if (ship != null) {
+            return ship;
+        }
+
+        if (getAllShipsMethod != null && getByChunkPosMethod != null) {
+            try {
+                Object shipData = getAllShipsMethod.invoke(null, level);
+                if (shipData != null) {
+                    Object byChunk = getByChunkPosMethod.invoke(shipData, pos.getX() >> 4, pos.getZ() >> 4);
+                    if (byChunk != null) {
+                        return byChunk;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        for (Object loadedShip : getAllLoadedShips(level)) {
+            try {
+                Method getChunkClaim = loadedShip.getClass().getMethod("getChunkClaim");
+                Object chunkClaim = getChunkClaim.invoke(loadedShip);
+                if (chunkClaim != null) {
+                    Method contains = chunkClaim.getClass().getMethod("contains", int.class, int.class);
+                    Object containsPos = contains.invoke(chunkClaim, pos.getX() >> 4, pos.getZ() >> 4);
+                    if (containsPos instanceof Boolean && (Boolean) containsPos) {
+                        return loadedShip;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    public static boolean isBlockInShipyard(Level level, BlockPos pos) {
+        if (!initialized) init();
+        if (!vsInstalled || isBlockInShipyardMethod == null) return false;
+
+        try {
+            Object result = isBlockInShipyardMethod.invoke(null, level, pos);
+            return result instanceof Boolean && (Boolean) result;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -152,7 +231,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled) return shipLocalPos;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return shipLocalPos;
             
             // Convert to JOML Vector3d
@@ -173,6 +252,24 @@ public class ValkyrienSkiesCompat {
     }
 
     /**
+     * Transform a ship-local position to world coordinates using a known ship object.
+     */
+    public static Vec3 toWorldCoordinatesWithShip(Object ship, Vec3 shipLocalPos) {
+        if (!initialized) init();
+        if (!vsInstalled || ship == null) return shipLocalPos;
+
+        try {
+            Object localJoml = toJOMLMethod.invoke(null, shipLocalPos);
+            Object transform = getTransformMethod.invoke(ship);
+            Object shipToWorld = getShipToWorldMethod.invoke(transform);
+            transformPositionMethod.invoke(shipToWorld, localJoml);
+            return (Vec3) toMinecraftMethod.invoke(null, localJoml);
+        } catch (Exception e) {
+            return shipLocalPos;
+        }
+    }
+
+    /**
      * Transform a world Vec3 position to ship-local coordinates.
      * @param level the level
      * @param shipBlockPos a block position on the ship (used to find the ship)
@@ -184,7 +281,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled) return worldPos;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return worldPos;
             
             // Convert to JOML Vector3d
@@ -205,6 +302,24 @@ public class ValkyrienSkiesCompat {
     }
 
     /**
+     * Transform a world position into ship-local coordinates using a known ship object.
+     */
+    public static Vec3 toShipCoordinatesWithShip(Object ship, Vec3 worldPos) {
+        if (!initialized) init();
+        if (!vsInstalled || ship == null) return worldPos;
+
+        try {
+            Object worldJoml = toJOMLMethod.invoke(null, worldPos);
+            Object transform = getTransformMethod.invoke(ship);
+            Object worldToShip = getWorldToShipMethod.invoke(transform);
+            transformPositionMethod.invoke(worldToShip, worldJoml);
+            return (Vec3) toMinecraftMethod.invoke(null, worldJoml);
+        } catch (Exception e) {
+            return worldPos;
+        }
+    }
+
+    /**
      * Transform a direction vector from ship-local to world space.
      * @param level the level
      * @param shipBlockPos a block position on the ship
@@ -216,7 +331,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled) return shipLocalDirection;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return shipLocalDirection;
             
             Object dirJoml = toJOMLMethod.invoke(null, shipLocalDirection);
@@ -241,7 +356,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled) return worldDirection;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return worldDirection;
             
             Object dirJoml = toJOMLMethod.invoke(null, worldDirection);
@@ -265,7 +380,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled || getVelocityMethod == null) return Vec3.ZERO;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return Vec3.ZERO;
             
             Object velocity = getVelocityMethod.invoke(ship);
@@ -290,7 +405,7 @@ public class ValkyrienSkiesCompat {
         if (!vsInstalled) return null;
         
         try {
-            Object ship = getShipManagingPosMethod.invoke(null, level, shipBlockPos);
+            Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return null;
             
             Object transform = getTransformMethod.invoke(ship);
@@ -302,5 +417,39 @@ public class ValkyrienSkiesCompat {
             // Silently fall back
         }
         return null;
+    }
+
+    /**
+     * Get all loaded ships in a level.
+     */
+    @SuppressWarnings("unchecked")
+    public static Iterable<Object> getAllLoadedShips(Level level) {
+        if (!initialized) init();
+        if (!vsInstalled) return java.util.Collections.emptyList();
+
+        if (getShipWorldMethod != null && getLoadedShipsMethod != null) {
+            try {
+                Object shipWorld = getShipWorldMethod.invoke(null, level);
+                if (shipWorld != null) {
+                    Object loadedShips = getLoadedShipsMethod.invoke(shipWorld);
+                    if (loadedShips instanceof Iterable) {
+                        return (Iterable<Object>) loadedShips;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (getAllShipsMethod != null) {
+            try {
+                Object allShips = getAllShipsMethod.invoke(null, level);
+                if (allShips instanceof Iterable) {
+                    return (Iterable<Object>) allShips;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return java.util.Collections.emptyList();
     }
 }

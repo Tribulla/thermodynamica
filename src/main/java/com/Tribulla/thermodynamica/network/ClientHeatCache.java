@@ -1,6 +1,7 @@
 package com.Tribulla.thermodynamica.network;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.Map;
@@ -16,6 +17,10 @@ public class ClientHeatCache {
 
     public static void update(BlockPos pos, double celsius, int tierOrdinal) {
         com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, tierOrdinal);
+    }
+
+    public static void update(BlockPos pos, double celsius, int tierOrdinal, BlockPos renderStatePos, Vec3 worldCenter) {
+        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, tierOrdinal, renderStatePos, worldCenter);
     }
 
     @Nullable

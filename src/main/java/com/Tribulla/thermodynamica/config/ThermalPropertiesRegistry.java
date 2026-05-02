@@ -21,8 +21,10 @@ public class ThermalPropertiesRegistry {
             for (Map.Entry<String, JsonElement> entry : blocks.entrySet()) {
                 if (entry.getKey().startsWith("_"))
                     continue;
-                ResourceLocation rl = new ResourceLocation(entry.getKey());
-                blockProperties.put(rl, parseProps(entry.getValue().getAsJsonObject()));
+                ResourceLocation rl = ResourceLocation.tryParse(entry.getKey());
+                if (rl != null) {
+                    blockProperties.put(rl, parseProps(entry.getValue().getAsJsonObject()));
+                }
             }
         }
         if (json.has("tags")) {

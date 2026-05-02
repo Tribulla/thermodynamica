@@ -100,8 +100,11 @@ public class HeatConfigManager {
             if (blockId.startsWith("#"))
                 continue;
             try {
-                api.registerBlockTier(new ResourceLocation(blockId), tier);
-                Thermodynamica.LOGGER.debug("Registered {} → {}", blockId, tier);
+                ResourceLocation rl = ResourceLocation.tryParse(blockId);
+                if (rl != null) {
+                    api.registerBlockTier(rl, tier);
+                    Thermodynamica.LOGGER.debug("Registered {} → {}", blockId, tier);
+                }
             } catch (Exception e) {
                 Thermodynamica.LOGGER.warn("Failed to register block tier {}: {}", blockId, e.getMessage());
             }

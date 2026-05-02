@@ -37,8 +37,10 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
                 if (json.has("blocks")) {
                     JsonObject blocks = json.getAsJsonObject("blocks");
                     for (Map.Entry<String, JsonElement> blockEntry : blocks.entrySet()) {
-                        ResourceLocation blockId = new ResourceLocation(blockEntry.getKey());
-                        registry.registerOverride(blockId, parseProps(blockEntry.getValue().getAsJsonObject()));
+                        ResourceLocation blockId = ResourceLocation.tryParse(blockEntry.getKey());
+                        if (blockId != null) {
+                            registry.registerOverride(blockId, parseProps(blockEntry.getValue().getAsJsonObject()));
+                        }
                     }
                 }
 

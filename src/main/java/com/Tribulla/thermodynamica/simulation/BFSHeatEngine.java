@@ -82,6 +82,8 @@ public class BFSHeatEngine {
     private ForkJoinPool pool;
 
     private static final int BATCH_SIZE = 256;
+    private static final int INITIAL_ADAPTIVE_BUDGET = 1000;
+    private static final int MIN_ADAPTIVE_BUDGET = 100;
 
     private double ambientTemp;
     private double deltaThreshold;
@@ -236,7 +238,7 @@ public class BFSHeatEngine {
         if (!batches.isEmpty()) {
             List<Future<?>> futures = new ArrayList<>(batches.size());
             for (long[] b : batches) {
-                futures.add(pool.submit(() -> computeBatch(b)));
+                futures.add(pool.submit(() -> computeBatch(b, stepFrontierSnapshot)));
             }
             for (Future<?> f : futures) {
                 try {
@@ -323,7 +325,8 @@ public class BFSHeatEngine {
         if (tag.contains("Grids")) {
             CompoundTag dimsTag = tag.getCompound("Grids");
             for (String dimKey : dimsTag.getAllKeys()) {
-                ResourceLocation dim = new ResourceLocation(dimKey);
+                ResourceLocation dim = ResourceLocation.tryParse(dimKey);
+                if (dim == null) continue;
                 ListTag cellList = dimsTag.getList(dimKey, 10);
                 ConcurrentHashMap<Long, double[]> grid = grids.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
                 for (int i = 0; i < cellList.size(); i++) {
@@ -340,7 +343,8 @@ public class BFSHeatEngine {
         if (tag.contains("Sources")) {
             CompoundTag sourcesTag = tag.getCompound("Sources");
             for (String dimKey : sourcesTag.getAllKeys()) {
-                ResourceLocation dim = new ResourceLocation(dimKey);
+                ResourceLocation dim = ResourceLocation.tryParse(dimKey);
+                if (dim == null) continue;
                 ListTag cellList = sourcesTag.getList(dimKey, 10);
                 ConcurrentHashMap<Long, Double> dimSources = sourceTemps.computeIfAbsent(dim,
                         k -> new ConcurrentHashMap<>());

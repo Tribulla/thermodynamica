@@ -43,7 +43,10 @@ public class BiomeConfig implements ConfigSection {
             for (Map.Entry<String, JsonElement> entry : assignments.entrySet()) {
                 if (entry.getKey().startsWith("_"))
                     continue;
-                biomeCategories.put(new ResourceLocation(entry.getKey()), entry.getValue().getAsString());
+                ResourceLocation rl = ResourceLocation.tryParse(entry.getKey());
+                if (rl != null) {
+                    biomeCategories.put(rl, entry.getValue().getAsString());
+                }
             }
         }
 
@@ -52,7 +55,10 @@ public class BiomeConfig implements ConfigSection {
             for (Map.Entry<String, JsonElement> entry : overrides.entrySet()) {
                 if (entry.getKey().startsWith("_"))
                     continue;
-                biomeOverrides.put(new ResourceLocation(entry.getKey()), entry.getValue().getAsDouble());
+                ResourceLocation rl = ResourceLocation.tryParse(entry.getKey());
+                if (rl != null) {
+                    biomeOverrides.put(rl, entry.getValue().getAsDouble());
+                }
             }
         }
     }

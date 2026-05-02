@@ -8,5 +8,5 @@ import net.minecraft.world.level.block.Block;
 
 public class ThermodynamicaTags {
     public static final TagKey<Block> RADIATES_HEAT = TagKey.create(Registries.BLOCK,
-            new ResourceLocation(Thermodynamica.MODID, "radiates_heat"));
+            ResourceLocation.fromNamespaceAndPath(Thermodynamica.MODID, "radiates_heat"));
 }

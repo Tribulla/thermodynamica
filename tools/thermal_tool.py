@@ -22,20 +22,20 @@ class ThermalConfigTool:
         self.block_id.grid(row=0, column=1, columnspan=2, sticky=tk.W, pady=5)
         self.block_id.insert(0, "minecraft:stone")
 
-        # Conductivity
-        ttk.Label(main_frame, text="Conductivity:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        # Conductivity (k, W/m*K) — Fourier conduction strength
+        ttk.Label(main_frame, text="Conductivity (k, W/m*K):").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.conductivity = tk.DoubleVar(value=1.0)
         ttk.Scale(main_frame, from_=0.0, to=10.0, variable=self.conductivity, orient=tk.HORIZONTAL).grid(row=1, column=1, sticky=tk.EW, pady=5)
         ttk.Entry(main_frame, textvariable=self.conductivity, width=10).grid(row=1, column=2, padx=5)
 
-        # Transfer Rate
-        ttk.Label(main_frame, text="Transfer Rate:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.transfer_rate = tk.DoubleVar(value=1.0)
-        ttk.Scale(main_frame, from_=0.0, to=10.0, variable=self.transfer_rate, orient=tk.HORIZONTAL).grid(row=2, column=1, sticky=tk.EW, pady=5)
-        ttk.Entry(main_frame, textvariable=self.transfer_rate, width=10).grid(row=2, column=2, padx=5)
+        # Heat Capacity (Cp, J/K) — thermal mass per block
+        ttk.Label(main_frame, text="Heat Capacity (Cp, J/K):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.heat_capacity = tk.DoubleVar(value=1000.0)
+        ttk.Scale(main_frame, from_=100.0, to=5000.0, variable=self.heat_capacity, orient=tk.HORIZONTAL).grid(row=2, column=1, sticky=tk.EW, pady=5)
+        ttk.Entry(main_frame, textvariable=self.heat_capacity, width=10).grid(row=2, column=2, padx=5)
 
-        # Dissipation Rate
-        ttk.Label(main_frame, text="Dissipation Rate:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        # Dissipation Rate (h, W/m^2*K) — convective heat transfer coefficient
+        ttk.Label(main_frame, text="Dissipation (h, W/m^2*K):").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.dissipation_rate = tk.DoubleVar(value=0.05)
         ttk.Scale(main_frame, from_=0.0, to=1.0, variable=self.dissipation_rate, orient=tk.HORIZONTAL).grid(row=3, column=1, sticky=tk.EW, pady=5)
         ttk.Entry(main_frame, textvariable=self.dissipation_rate, width=10).grid(row=3, column=2, padx=5)
@@ -73,7 +73,7 @@ class ThermalConfigTool:
 
         props = {
             "conductivity": round(self.conductivity.get(), 3),
-            "transfer_rate": round(self.transfer_rate.get(), 3),
+            "heat_capacity": round(self.heat_capacity.get(), 1),
             "dissipation_rate": round(self.dissipation_rate.get(), 3)
         }
 

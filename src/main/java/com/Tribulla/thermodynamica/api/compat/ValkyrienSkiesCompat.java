@@ -378,12 +378,15 @@ public class ValkyrienSkiesCompat {
     public static Vec3 getShipVelocity(Level level, BlockPos shipBlockPos) {
         if (!initialized) init();
         if (!vsInstalled || getVelocityMethod == null) return Vec3.ZERO;
-        
+
         try {
             Object ship = getShipForBlockPos(level, shipBlockPos);
             if (ship == null) return Vec3.ZERO;
-            
+
             Object velocity = getVelocityMethod.invoke(ship);
+            if (velocity instanceof org.joml.Vector3dc vel) {
+                return new Vec3(vel.x(), vel.y(), vel.z());
+            }
             if (velocity instanceof org.joml.Vector3d vel) {
                 return new Vec3(vel.x, vel.y, vel.z);
             }

@@ -13,6 +13,7 @@ public class SimulationSettings implements ConfigSection {
     private boolean airInsulates = true;
     private double waterTransferMultiplier = 2.0;
     private double dissipationMultiplier = 1.0;
+    private double timeBudgetMsPerTick = 200.0;
     private int smoothingRadius = 2;
     private int smoothingBudget = 500;
     private boolean smoothingEnabled = true;
@@ -42,6 +43,8 @@ public class SimulationSettings implements ConfigSection {
             waterTransferMultiplier = json.get("water_transfer_multiplier").getAsDouble();
         if (json.has("dissipation_multiplier"))
             dissipationMultiplier = json.get("dissipation_multiplier").getAsDouble();
+        if (json.has("time_budget_ms_per_tick"))
+            timeBudgetMsPerTick = Math.max(0.1, json.get("time_budget_ms_per_tick").getAsDouble());
         if (json.has("smoothing_radius"))
             smoothingRadius = json.get("smoothing_radius").getAsInt();
         if (json.has("smoothing_budget"))
@@ -76,6 +79,7 @@ public class SimulationSettings implements ConfigSection {
         json.addProperty("air_insulates", airInsulates);
         json.addProperty("water_transfer_multiplier", waterTransferMultiplier);
         json.addProperty("dissipation_multiplier", dissipationMultiplier);
+        json.addProperty("time_budget_ms_per_tick", timeBudgetMsPerTick);
         json.addProperty("smoothing_enabled", smoothingEnabled);
         json.addProperty("smoothing_radius", smoothingRadius);
         json.addProperty("smoothing_budget", smoothingBudget);
@@ -120,6 +124,10 @@ public class SimulationSettings implements ConfigSection {
 
     public double getDissipationMultiplier() {
         return dissipationMultiplier;
+    }
+
+    public double getTimeBudgetMsPerTick() {
+        return timeBudgetMsPerTick;
     }
 
     public int getSmoothingRadius() {

@@ -109,9 +109,9 @@ Each block has three thermal properties that control how heat interacts with it:
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `conductivity` | 1.0 | How readily heat flows through the block. 0 = insulator (air) |
-| `transferRate` | 1.0 | Speed of heat transfer between adjacent blocks |
-| `dissipationRate` | 0.05 | Rate of heat loss per exposed face per tick |
+| `conductivity` (k, W/m·K) | 1.0 | Fourier conduction strength between adjacent solids: `Q = k_eff * (T_a - T_b)` per face. 0 = insulator (air). |
+| `heatCapacity` (Cp, J/K) | 1000.0 | Thermal mass per block: `dT = Q / Cp`. Higher means slower temperature change. |
+| `dissipationRate` (h, W/m²·K) | 0.05 | Convective coefficient for Newton's law of cooling on exposed faces: `Q = h * (T - T_ambient)` per exposed face per tick. |
 
 Configure per-block or per-tag in `config/Thermodynamica/thermal_properties.json`.
 
@@ -558,11 +558,11 @@ Each tier has a JSON file (e.g. `heat/pos5.json`):
 ```json
 {
     "blocks": {
-        "minecraft:iron_block": { "conductivity": 2.0, "transfer_rate": 1.5, "dissipation_rate": 0.02 },
-        "minecraft:wool": { "conductivity": 0.1, "transfer_rate": 0.3, "dissipation_rate": 0.01 }
+        "minecraft:iron_block": { "conductivity": 2.0, "heat_capacity": 3500, "dissipation_rate": 0.02 },
+        "minecraft:wool": { "conductivity": 0.1, "heat_capacity": 200, "dissipation_rate": 0.01 }
     },
     "tags": {
-        "#minecraft:logs": { "conductivity": 0.3, "transfer_rate": 0.5, "dissipation_rate": 0.03 }
+        "#minecraft:logs": { "conductivity": 0.3, "heat_capacity": 800, "dissipation_rate": 0.03 }
     }
 }
 ```

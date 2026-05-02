@@ -47,7 +47,7 @@ public class HeatSimulationManager {
         return savedData;
     }
 
-    static record SourceInfo(double temperature, double conductivity, double transferRate) {
+    static record SourceInfo(double temperature, double conductivity, double heatCapacity) {
     }
 
     public HeatSimulationManager(MinecraftServer server, HeatConfigManager configManager) {
@@ -60,8 +60,8 @@ public class HeatSimulationManager {
     public void start() {
         running.set(true);
         engine.start();
-        Thermodynamica.LOGGER.info("Heat simulation started (BFS engine, {} workers)",
-                settings.getWorkerThreads());
+        Thermodynamica.LOGGER.info("Heat simulation started (BFS engine, inline; {} ms/tick budget)",
+                settings.getTimeBudgetMsPerTick());
     }
 
     public void stopProcessing() {
@@ -90,10 +90,7 @@ public class HeatSimulationManager {
             cleanupStaleChunks();
         }
 
-        if (tickCounter >= settings.getSimulationIntervalTicks()) {
-            tickCounter = 0;
-            engine.tick();
-        }
+        engine.tick();
     }
 
     private void cleanupStaleChunks() {
@@ -173,7 +170,7 @@ public class HeatSimulationManager {
         ThermalProperties props = lookupThermalProps(dim, pos);
 
         sourceIndex.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
-                .put(packed, new SourceInfo(celsius, props.getConductivity(), props.getTransferRate()));
+                .put(packed, new SourceInfo(celsius, props.getConductivity(), props.getHeatCapacity()));
 
         ChunkHeatKey chunkKey = new ChunkHeatKey(dim, new ChunkPos(pos));
         chunkSourceIndex.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet())
@@ -264,7 +261,7 @@ public class HeatSimulationManager {
                 ThermalProperties props = lookupThermalProps(dim, p);
                 sourceIndex.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
                         .put(packed,
-                                new SourceInfo(cellEntry.getValue(), props.getConductivity(), props.getTransferRate()));
+                                new SourceInfo(cellEntry.getValue(), props.getConductivity(), props.getHeatCapacity()));
                 ChunkHeatKey chunkKey = new ChunkHeatKey(dim, new ChunkPos(p));
                 chunkSourceIndex.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(packed);
             }
@@ -370,10 +367,10 @@ public class HeatSimulationManager {
         BlockPos sp = BlockPos.of(nearestPacked);
         return String.format(
                 "Nearest source at (%d,%d,%d) dist=%.1f | target=%.1f grid=%.1f | " +
-                        "cond=%.2f xfer=%.2f | frontier=%d grid=%d",
+                        "k=%.2f Cp=%.0f | frontier=%d grid=%d",
                 sp.getX(), sp.getY(), sp.getZ(), Math.sqrt(nearestDist),
                 nearestInfo.temperature(), engine.getTemperature(dim, nearestPacked),
-                nearestInfo.conductivity(), nearestInfo.transferRate(),
+                nearestInfo.conductivity(), nearestInfo.heatCapacity(),
                 engine.getCurrentFrontierSize(), engine.getGridSize());
     }
 

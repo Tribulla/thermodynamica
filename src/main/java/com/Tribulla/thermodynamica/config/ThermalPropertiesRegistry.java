@@ -38,11 +38,11 @@ public class ThermalPropertiesRegistry {
     private ThermalProperties parseProps(JsonObject obj) {
         double conductivity = obj.has("conductivity") ? obj.get("conductivity").getAsDouble()
                 : ThermalProperties.DEFAULT_CONDUCTIVITY;
-        double transferRate = obj.has("transfer_rate") ? obj.get("transfer_rate").getAsDouble()
-                : ThermalProperties.DEFAULT_TRANSFER_RATE;
+        double heatCapacity = obj.has("heat_capacity") ? obj.get("heat_capacity").getAsDouble()
+                : ThermalProperties.DEFAULT_HEAT_CAPACITY;
         double dissipationRate = obj.has("dissipation_rate") ? obj.get("dissipation_rate").getAsDouble()
                 : ThermalProperties.DEFAULT_DISSIPATION_RATE;
-        return new ThermalProperties(conductivity, transferRate, dissipationRate);
+        return new ThermalProperties(conductivity, heatCapacity, dissipationRate);
     }
 
     @Nullable

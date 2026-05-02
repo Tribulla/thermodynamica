@@ -171,47 +171,51 @@ public final class HeatTargeting {
                 .orElse(null);
     }
 
+    private static final double LOS_TARGET_TOLERANCE = 1.5;
+
     /**
      * Checks if there's a clear line of sight between two positions.
-     * Uses Minecraft's built-in raycasting.
      *
      * @param level The level to check in
      * @param from Starting position
-     * @param to Target position
+     * @param to Target position (in the level's native coordinate frame)
      * @return true if there's unobstructed line of sight
      */
     public static boolean hasLineOfSight(Level level, Vec3 from, Vec3 to) {
-        // Handle VS ships - transform coordinates if needed
         BlockPos fromBlock = BlockPos.containing(from);
         BlockPos toBlock = BlockPos.containing(to);
-        
-        // If either position is on a VS ship, transform to world coordinates
+
+        Vec3 worldFrom = from;
+        Vec3 worldTo = to;
         if (ValkyrienSkiesCompat.isVSInstalled()) {
             if (ValkyrienSkiesCompat.isOnShip(level, fromBlock)) {
-                from = ValkyrienSkiesCompat.toWorldCoordinates(level, fromBlock, from);
+                worldFrom = ValkyrienSkiesCompat.toWorldCoordinates(level, fromBlock, from);
             }
             if (ValkyrienSkiesCompat.isOnShip(level, toBlock)) {
-                to = ValkyrienSkiesCompat.toWorldCoordinates(level, toBlock, to);
+                worldTo = ValkyrienSkiesCompat.toWorldCoordinates(level, toBlock, to);
             }
         }
-        
+
         ClipContext context = new ClipContext(
-                from, to,
+                worldFrom, worldTo,
                 ClipContext.Block.COLLIDER,
                 ClipContext.Fluid.NONE,
                 null
         );
-        
+
         BlockHitResult result = level.clip(context);
-        
-        // If we hit nothing or hit the target block, we have LOS
+
         if (result.getType() == HitResult.Type.MISS) {
             return true;
         }
         
-        // Check if we hit the target block (allow hitting the target itself)
         BlockPos hitPos = result.getBlockPos();
-        return hitPos.equals(toBlock);
+        if (hitPos.equals(toBlock)) {
+            return true;
+        }
+
+        return result.getLocation().distanceToSqr(worldTo)
+                <= LOS_TARGET_TOLERANCE * LOS_TARGET_TOLERANCE;
     }
 
     /**

@@ -63,6 +63,13 @@ public class HeatAPIImpl extends HeatAPI {
     }
 
     @Override
+    public void setTemperature(Level level, BlockPos pos, double celsius) {
+        if (simulationManager != null) {
+            simulationManager.setTemperature(level, pos, celsius);
+        }
+    }
+
+    @Override
     public double getVisualCelsius(Level level, BlockPos pos) {
         OptionalDouble simHeat = getSimulatedCelsius(level, pos);
         if (simHeat.isPresent()) {

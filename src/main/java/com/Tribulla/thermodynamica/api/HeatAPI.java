@@ -33,6 +33,8 @@ public abstract class HeatAPI {
 
     public abstract OptionalDouble getSimulatedCelsius(Level level, BlockPos pos);
 
+    public abstract void setTemperature(Level level, BlockPos pos, double celsius);
+
     public abstract double getVisualCelsius(Level level, BlockPos pos);
 
     public abstract Map<BlockPos, Double> getSimulatedSourcesInChunk(Level level, ChunkPos pos);

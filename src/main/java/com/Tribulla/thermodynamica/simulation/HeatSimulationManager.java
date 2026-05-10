@@ -8,9 +8,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
+import com.Tribulla.thermodynamica.api.EnergyOutputProvider;
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
+import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.config.SimulationSettings;
 
@@ -90,6 +92,8 @@ public class HeatSimulationManager {
             cleanupStaleChunks();
         }
 
+        pollDynamicSources();
+
         engine.tick();
     }
 
@@ -112,6 +116,71 @@ public class HeatSimulationManager {
                 engine.clearChunk(key.getDimension(), key.getChunkPos().x, key.getChunkPos().z);
             }
         }
+    }
+
+    private void pollDynamicSources() {
+        HeatAPI apiRaw = HeatAPI.get();
+        if (!(apiRaw instanceof HeatAPIImpl apiImpl))
+            return;
+
+        if (apiImpl.getEnergyOutputProviders().isEmpty())
+            return;
+
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, SourceInfo>> dimEntry : sourceIndex.entrySet()) {
+            ResourceLocation dim = dimEntry.getKey();
+            ServerLevel level = getLevelForDim(dim);
+            if (level == null)
+                continue;
+
+            for (Map.Entry<Long, SourceInfo> sourceEntry : dimEntry.getValue().entrySet()) {
+                long packed = sourceEntry.getKey();
+                SourceInfo currentInfo = sourceEntry.getValue();
+
+                Double override = apiImpl.getPerPositionOverride(dim, packed);
+                if (override != null) {
+                    if (Math.abs(override - currentInfo.temperature()) > 0.01) {
+                        updateSourceTemperature(dim, packed, override);
+                    }
+                    continue;
+                }
+
+                BlockPos pos = BlockPos.of(packed);
+                try {
+                    if (!level.isLoaded(pos))
+                        continue;
+
+                    BlockState state = level.getBlockState(pos);
+                    ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+                    if (blockId == null)
+                        continue;
+
+                    EnergyOutputProvider provider = apiImpl.getEnergyOutputProvider(blockId);
+                    if (provider == null)
+                        continue;
+
+                    java.util.OptionalDouble providerValue = provider.getEnergyOutput(level, pos);
+                    if (providerValue.isPresent()) {
+                        double newTemp = providerValue.getAsDouble();
+                        if (Math.abs(newTemp - currentInfo.temperature()) > 0.01) {
+                            updateSourceTemperature(dim, packed, newTemp);
+                        }
+                    }
+                } catch (Exception e) {
+                    Thermodynamica.LOGGER.warn("Energy output provider threw exception for source at {}", pos, e);
+                }
+            }
+        }
+    }
+
+    private void updateSourceTemperature(ResourceLocation dim, long packed, double newCelsius) {
+        ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+        if (dimSources != null) {
+            SourceInfo old = dimSources.get(packed);
+            if (old != null) {
+                dimSources.put(packed, new SourceInfo(newCelsius, old.conductivity(), old.heatCapacity()));
+            }
+        }
+        engine.updateSource(dim, packed, newCelsius);
     }
 
     public double getTemperature(net.minecraft.world.level.Level level, BlockPos pos) {
@@ -148,16 +217,43 @@ public class HeatSimulationManager {
         ResourceLocation dim = level.dimension().location();
         BlockState state = level.getBlockState(pos);
         ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
-        HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
         long packed = pos.asLong();
 
-        if (tier == settings.getAmbientTier()) {
-            ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
-            if (dimSources != null && dimSources.containsKey(packed))
-                return;
+        double celsius = 0;
+        boolean resolved = false;
+
+        HeatAPI apiRaw = HeatAPI.get();
+        if (apiRaw instanceof HeatAPIImpl apiImpl) {
+            Double override = apiImpl.getPerPositionOverride(dim, packed);
+            if (override != null) {
+                celsius = override;
+                resolved = true;
+            } else if (blockId != null) {
+                EnergyOutputProvider provider = apiImpl.getEnergyOutputProvider(blockId);
+                if (provider != null) {
+                    try {
+                        java.util.OptionalDouble providerValue = provider.getEnergyOutput(level, pos);
+                        if (providerValue.isPresent()) {
+                            celsius = providerValue.getAsDouble();
+                            resolved = true;
+                        }
+                    } catch (Exception e) {
+                        Thermodynamica.LOGGER.warn("Energy output provider for {} threw exception at {}", blockId, pos, e);
+                    }
+                }
+            }
         }
 
-        double celsius = configManager.getTierDefinitions().getCelsius(tier);
+        if (!resolved) {
+            HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
+            if (tier == settings.getAmbientTier()) {
+                ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+                if (dimSources != null && dimSources.containsKey(packed))
+                    return;
+            }
+            celsius = configManager.getTierDefinitions().getCelsius(tier);
+        }
+
         registerSource(dim, pos, packed, celsius);
     }
 

@@ -42,8 +42,10 @@ public class HeatTierResourceLoader extends SimpleJsonResourceReloadListener {
                 if (json.has("blocks")) {
                     JsonArray blocks = json.getAsJsonArray("blocks");
                     for (JsonElement el : blocks) {
-                        ResourceLocation blockId = new ResourceLocation(el.getAsString());
-                        tierRegistry.registerDataPack(blockId, tier, fileLocation.toString());
+                        ResourceLocation blockId = ResourceLocation.tryParse(el.getAsString());
+                        if (blockId != null) {
+                            tierRegistry.registerDataPack(blockId, tier, fileLocation.toString());
+                        }
                     }
                 }
 
@@ -51,11 +53,13 @@ public class HeatTierResourceLoader extends SimpleJsonResourceReloadListener {
                     JsonArray tags = json.getAsJsonArray("tags");
                     for (JsonElement el : tags) {
                         String tagName = el.getAsString();
-                        ResourceLocation tagId = new ResourceLocation(
+                        ResourceLocation tagId = ResourceLocation.tryParse(
                                 tagName.startsWith("#") ? tagName.substring(1) : tagName);
-                        tierRegistry.registerTag(tagId, tier,
-                                com.Tribulla.thermodynamica.api.TierResolution.Source.DATA_PACK,
-                                fileLocation.toString());
+                        if (tagId != null) {
+                            tierRegistry.registerTag(tagId, tier,
+                                    com.Tribulla.thermodynamica.api.TierResolution.Source.DATA_PACK,
+                                    fileLocation.toString());
+                        }
                     }
                 }
             } catch (Exception e) {

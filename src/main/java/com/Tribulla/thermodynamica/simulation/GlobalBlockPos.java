@@ -14,6 +14,11 @@ public class GlobalBlockPos {
         this.pos = pos.immutable();
     }
 
+    public GlobalBlockPos(ResourceLocation dimension, long packedPos) {
+        this.dimension = dimension;
+        this.pos = BlockPos.of(packedPos).immutable();
+    }
+
     public ResourceLocation getDimension() {
         return dimension;
     }

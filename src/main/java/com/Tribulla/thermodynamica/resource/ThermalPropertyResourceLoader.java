@@ -37,14 +37,16 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
                 if (json.has("blocks")) {
                     JsonObject blocks = json.getAsJsonObject("blocks");
                     for (Map.Entry<String, JsonElement> blockEntry : blocks.entrySet()) {
-                        ResourceLocation blockId = new ResourceLocation(blockEntry.getKey());
-                        registry.registerOverride(blockId, parseProps(blockEntry.getValue().getAsJsonObject()));
+                        ResourceLocation blockId = ResourceLocation.tryParse(blockEntry.getKey());
+                        if (blockId != null) {
+                            registry.registerOverride(blockId, parseProps(blockEntry.getValue().getAsJsonObject()));
+                        }
                     }
                 }
 
                 // Add support for direct block files if preferred:
                 // e.g. "thermodynamica:thermal_properties/minecraft/cobblestone.json"
-                if (json.has("conductivity") || json.has("transfer_rate")) {
+                if (json.has("conductivity") || json.has("heat_capacity")) {
                     registry.registerOverride(fileLocation, parseProps(json));
                 }
 
@@ -59,10 +61,10 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
     private ThermalProperties parseProps(JsonObject obj) {
         double conductivity = obj.has("conductivity") ? obj.get("conductivity").getAsDouble()
                 : ThermalProperties.DEFAULT_CONDUCTIVITY;
-        double transferRate = obj.has("transfer_rate") ? obj.get("transfer_rate").getAsDouble()
-                : ThermalProperties.DEFAULT_TRANSFER_RATE;
+        double heatCapacity = obj.has("heat_capacity") ? obj.get("heat_capacity").getAsDouble()
+                : ThermalProperties.DEFAULT_HEAT_CAPACITY;
         double dissipationRate = obj.has("dissipation_rate") ? obj.get("dissipation_rate").getAsDouble()
                 : ThermalProperties.DEFAULT_DISSIPATION_RATE;
-        return new ThermalProperties(conductivity, transferRate, dissipationRate);
+        return new ThermalProperties(conductivity, heatCapacity, dissipationRate);
     }
 }

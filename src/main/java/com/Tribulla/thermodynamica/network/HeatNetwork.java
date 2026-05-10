@@ -10,7 +10,7 @@ public class HeatNetwork {
         private static final String PROTOCOL_VERSION = "2";
 
         public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-                        new ResourceLocation(Thermodynamica.MODID, "main"),
+                        ResourceLocation.fromNamespaceAndPath(Thermodynamica.MODID, "main"),
                         () -> PROTOCOL_VERSION,
                         PROTOCOL_VERSION::equals,
                         PROTOCOL_VERSION::equals);

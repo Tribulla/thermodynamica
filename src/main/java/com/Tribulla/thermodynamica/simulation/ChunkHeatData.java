@@ -6,30 +6,39 @@ import net.minecraft.world.level.ChunkPos;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import it.unimi.dsi.fastutil.longs.Long2DoubleMap;
+import it.unimi.dsi.fastutil.longs.Long2DoubleMaps;
+import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 
 public class ChunkHeatData {
 
     private final ChunkPos chunkPos;
-    private final ConcurrentHashMap<BlockPos, Double> temperatures = new ConcurrentHashMap<>();
+    private final Long2DoubleMap temperatures = Long2DoubleMaps.synchronize(new Long2DoubleOpenHashMap());
     private final ConcurrentHashMap<BlockPos, ResourceLocation> blockIds = new ConcurrentHashMap<>();
 
     public ChunkHeatData(ChunkPos chunkPos) {
         this.chunkPos = chunkPos;
+        // Optional: change default return value to NaN to differentiate from 0.0
+        // but default 0.0 might be fine.
     }
 
     public Double getTemperature(BlockPos pos) {
-        return temperatures.get(pos);
+        long key = pos.asLong();
+        if (temperatures.containsKey(key)) {
+            return temperatures.get(key);
+        }
+        return null;
     }
 
     public void setTemperature(BlockPos pos, double celsius) {
-        temperatures.put(pos.immutable(), celsius);
+        temperatures.put(pos.asLong(), celsius);
     }
 
     public void removeTemperature(BlockPos pos) {
-        temperatures.remove(pos);
+        temperatures.remove(pos.asLong());
     }
 
-    public ConcurrentHashMap<BlockPos, Double> getTemperatures() {
+    public Long2DoubleMap getTemperatures() {
         return temperatures;
     }
 
@@ -46,8 +55,8 @@ public class ChunkHeatData {
         int dx = neighborChunk.x - chunkPos.x;
         int dz = neighborChunk.z - chunkPos.z;
 
-        for (Map.Entry<BlockPos, Double> entry : temperatures.entrySet()) {
-            BlockPos pos = entry.getKey();
+        for (Long2DoubleMap.Entry entry : temperatures.long2DoubleEntrySet()) {
+            BlockPos pos = BlockPos.of(entry.getLongKey());
             int localX = pos.getX() - chunkPos.getMinBlockX();
             int localZ = pos.getZ() - chunkPos.getMinBlockZ();
 
@@ -62,7 +71,7 @@ public class ChunkHeatData {
                 isEdge = true;
 
             if (isEdge) {
-                result.put(pos, entry.getValue());
+                result.put(pos, entry.getDoubleValue());
             }
         }
         return result;
@@ -70,7 +79,7 @@ public class ChunkHeatData {
 
     public void applyUpdates(List<HeatUpdate> updates) {
         for (HeatUpdate update : updates) {
-            temperatures.put(update.pos().immutable(), update.celsius());
+            temperatures.put(update.pos().asLong(), update.celsius());
         }
     }
 

@@ -1,14 +1,14 @@
 {
-    "_comment": "Example of setting custom thermal properties for specific blocks.",
+    "_comment": "Example of setting custom thermal properties for specific blocks. heat_capacity is the block's thermal mass (J/K) — higher = slower temperature change.",
     "blocks": {
         "modid:custom_insulator": {
             "conductivity": 0.1,
-            "transfer_rate": 0.2,
+            "heat_capacity": 300,
             "dissipation_rate": 0.8
         },
         "modid:custom_conductor": {
             "conductivity": 5.0,
-            "transfer_rate": 2.5,
+            "heat_capacity": 3500,
             "dissipation_rate": 0.01
         }
     }

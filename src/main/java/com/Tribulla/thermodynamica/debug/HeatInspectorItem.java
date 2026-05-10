@@ -64,7 +64,7 @@ public class HeatInspectorItem extends Item {
         player.sendSystemMessage(Component.literal("§7Source: §a" + source));
         player.sendSystemMessage(Component.literal("§7Priority: §d" + priority));
         player.sendSystemMessage(Component.literal(String.format("§7Conductivity: §f%.2f", props.getConductivity())));
-        player.sendSystemMessage(Component.literal(String.format("§7Transfer Rate: §f%.2f", props.getTransferRate())));
+        player.sendSystemMessage(Component.literal(String.format("§7Heat Capacity: §f%.0f J/K", props.getHeatCapacity())));
         player.sendSystemMessage(
                 Component.literal(String.format("§7Dissipation: §f%.4f /face/tick", props.getDissipationRate())));
         player.sendSystemMessage(

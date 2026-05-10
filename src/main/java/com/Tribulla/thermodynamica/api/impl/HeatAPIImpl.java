@@ -4,6 +4,7 @@ import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.*;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
+import com.Tribulla.thermodynamica.simulation.GlobalBlockPos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceLocation;
@@ -15,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.world.level.ChunkPos;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -25,6 +27,8 @@ public class HeatAPIImpl extends HeatAPI {
     private final TierRegistry tierRegistry;
     private final List<Consumer<TierChangeEvent>> tierChangeListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<TemperatureChangeEvent>> tempChangeListeners = new CopyOnWriteArrayList<>();
+    private final ConcurrentHashMap<ResourceLocation, EnergyOutputProvider> energyOutputProviders = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<GlobalBlockPos, Double> perPositionOverrides = new ConcurrentHashMap<>();
     private volatile HeatSimulationManager simulationManager;
 
     public HeatAPIImpl(HeatConfigManager configManager) {
@@ -60,6 +64,13 @@ public class HeatAPIImpl extends HeatAPI {
             return simulationManager.getExactTemperature(level, pos);
         }
         return OptionalDouble.empty();
+    }
+
+    @Override
+    public void setTemperature(Level level, BlockPos pos, double celsius) {
+        if (simulationManager != null) {
+            simulationManager.setTemperature(level, pos, celsius);
+        }
     }
 
     @Override
@@ -173,5 +184,55 @@ public class HeatAPIImpl extends HeatAPI {
             return simulationManager.getActiveHeatSources(level.dimension().location(), minCelsius);
         }
         return Collections.emptyMap();
+    }
+
+    @Override
+    public void registerEnergyOutputProvider(ResourceLocation block, EnergyOutputProvider provider) {
+        energyOutputProviders.put(block, provider);
+        Thermodynamica.LOGGER.debug("Registered energy output provider for {}", block);
+    }
+
+    @Override
+    public void unregisterEnergyOutputProvider(ResourceLocation block) {
+        energyOutputProviders.remove(block);
+        Thermodynamica.LOGGER.debug("Unregistered energy output provider for {}", block);
+    }
+
+    @Override
+    public void setBlockEnergyOutput(Level level, BlockPos pos, double celsius) {
+        ResourceLocation dim = level.dimension().location();
+        GlobalBlockPos key = new GlobalBlockPos(dim, pos.asLong());
+        perPositionOverrides.put(key, celsius);
+
+        // Immediately update the simulation source so the change takes effect right away
+        if (simulationManager != null) {
+            simulationManager.setTemperature(level, pos, celsius);
+        }
+    }
+
+    @Override
+    public void clearBlockEnergyOutput(Level level, BlockPos pos) {
+        ResourceLocation dim = level.dimension().location();
+        GlobalBlockPos key = new GlobalBlockPos(dim, pos.asLong());
+        perPositionOverrides.remove(key);
+
+        // Re-activate with default tier temperature
+        if (simulationManager != null) {
+            simulationManager.markActive(level, pos);
+        }
+    }
+
+    @Nullable
+    public EnergyOutputProvider getEnergyOutputProvider(ResourceLocation block) {
+        return energyOutputProviders.get(block);
+    }
+
+    @Nullable
+    public Double getPerPositionOverride(ResourceLocation dim, long packedPos) {
+        return perPositionOverrides.get(new GlobalBlockPos(dim, packedPos));
+    }
+
+    public Map<ResourceLocation, EnergyOutputProvider> getEnergyOutputProviders() {
+        return Collections.unmodifiableMap(energyOutputProviders);
     }
 }

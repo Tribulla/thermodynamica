@@ -33,6 +33,8 @@ public abstract class HeatAPI {
 
     public abstract OptionalDouble getSimulatedCelsius(Level level, BlockPos pos);
 
+    public abstract void setTemperature(Level level, BlockPos pos, double celsius);
+
     public abstract double getVisualCelsius(Level level, BlockPos pos);
 
     public abstract Map<BlockPos, Double> getSimulatedSourcesInChunk(Level level, ChunkPos pos);
@@ -59,6 +61,14 @@ public abstract class HeatAPI {
     public abstract double getTierCelsius(HeatTier tier);
 
     public abstract double getBiomeOffset(Level level, BlockPos pos);
+
+    public abstract void registerEnergyOutputProvider(ResourceLocation block, EnergyOutputProvider provider);
+
+    public abstract void unregisterEnergyOutputProvider(ResourceLocation block);
+
+    public abstract void setBlockEnergyOutput(Level level, BlockPos pos, double celsius);
+
+    public abstract void clearBlockEnergyOutput(Level level, BlockPos pos);
 
     // ==================== Targeting API ====================
     

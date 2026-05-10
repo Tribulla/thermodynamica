@@ -8,9 +8,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
+import com.Tribulla.thermodynamica.api.EnergyOutputProvider;
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
+import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.config.SimulationSettings;
 
@@ -47,7 +49,7 @@ public class HeatSimulationManager {
         return savedData;
     }
 
-    static record SourceInfo(double temperature, double conductivity, double transferRate) {
+    static record SourceInfo(double temperature, double conductivity, double heatCapacity) {
     }
 
     public HeatSimulationManager(MinecraftServer server, HeatConfigManager configManager) {
@@ -60,8 +62,8 @@ public class HeatSimulationManager {
     public void start() {
         running.set(true);
         engine.start();
-        Thermodynamica.LOGGER.info("Heat simulation started (BFS engine, {} workers)",
-                settings.getWorkerThreads());
+        Thermodynamica.LOGGER.info("Heat simulation started (BFS engine, inline; {} ms/tick budget)",
+                settings.getTimeBudgetMsPerTick());
     }
 
     public void stopProcessing() {
@@ -90,10 +92,9 @@ public class HeatSimulationManager {
             cleanupStaleChunks();
         }
 
-        if (tickCounter >= settings.getSimulationIntervalTicks()) {
-            tickCounter = 0;
-            engine.tick();
-        }
+        pollDynamicSources();
+
+        engine.tick();
     }
 
     private void cleanupStaleChunks() {
@@ -115,6 +116,71 @@ public class HeatSimulationManager {
                 engine.clearChunk(key.getDimension(), key.getChunkPos().x, key.getChunkPos().z);
             }
         }
+    }
+
+    private void pollDynamicSources() {
+        HeatAPI apiRaw = HeatAPI.get();
+        if (!(apiRaw instanceof HeatAPIImpl apiImpl))
+            return;
+
+        if (apiImpl.getEnergyOutputProviders().isEmpty())
+            return;
+
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, SourceInfo>> dimEntry : sourceIndex.entrySet()) {
+            ResourceLocation dim = dimEntry.getKey();
+            ServerLevel level = getLevelForDim(dim);
+            if (level == null)
+                continue;
+
+            for (Map.Entry<Long, SourceInfo> sourceEntry : dimEntry.getValue().entrySet()) {
+                long packed = sourceEntry.getKey();
+                SourceInfo currentInfo = sourceEntry.getValue();
+
+                Double override = apiImpl.getPerPositionOverride(dim, packed);
+                if (override != null) {
+                    if (Math.abs(override - currentInfo.temperature()) > 0.01) {
+                        updateSourceTemperature(dim, packed, override);
+                    }
+                    continue;
+                }
+
+                BlockPos pos = BlockPos.of(packed);
+                try {
+                    if (!level.isLoaded(pos))
+                        continue;
+
+                    BlockState state = level.getBlockState(pos);
+                    ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+                    if (blockId == null)
+                        continue;
+
+                    EnergyOutputProvider provider = apiImpl.getEnergyOutputProvider(blockId);
+                    if (provider == null)
+                        continue;
+
+                    java.util.OptionalDouble providerValue = provider.getEnergyOutput(level, pos);
+                    if (providerValue.isPresent()) {
+                        double newTemp = providerValue.getAsDouble();
+                        if (Math.abs(newTemp - currentInfo.temperature()) > 0.01) {
+                            updateSourceTemperature(dim, packed, newTemp);
+                        }
+                    }
+                } catch (Exception e) {
+                    Thermodynamica.LOGGER.warn("Energy output provider threw exception for source at {}", pos, e);
+                }
+            }
+        }
+    }
+
+    private void updateSourceTemperature(ResourceLocation dim, long packed, double newCelsius) {
+        ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+        if (dimSources != null) {
+            SourceInfo old = dimSources.get(packed);
+            if (old != null) {
+                dimSources.put(packed, new SourceInfo(newCelsius, old.conductivity(), old.heatCapacity()));
+            }
+        }
+        engine.updateSource(dim, packed, newCelsius);
     }
 
     public double getTemperature(net.minecraft.world.level.Level level, BlockPos pos) {
@@ -151,16 +217,43 @@ public class HeatSimulationManager {
         ResourceLocation dim = level.dimension().location();
         BlockState state = level.getBlockState(pos);
         ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
-        HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
         long packed = pos.asLong();
 
-        if (tier == settings.getAmbientTier()) {
-            ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
-            if (dimSources != null && dimSources.containsKey(packed))
-                return;
+        double celsius = 0;
+        boolean resolved = false;
+
+        HeatAPI apiRaw = HeatAPI.get();
+        if (apiRaw instanceof HeatAPIImpl apiImpl) {
+            Double override = apiImpl.getPerPositionOverride(dim, packed);
+            if (override != null) {
+                celsius = override;
+                resolved = true;
+            } else if (blockId != null) {
+                EnergyOutputProvider provider = apiImpl.getEnergyOutputProvider(blockId);
+                if (provider != null) {
+                    try {
+                        java.util.OptionalDouble providerValue = provider.getEnergyOutput(level, pos);
+                        if (providerValue.isPresent()) {
+                            celsius = providerValue.getAsDouble();
+                            resolved = true;
+                        }
+                    } catch (Exception e) {
+                        Thermodynamica.LOGGER.warn("Energy output provider for {} threw exception at {}", blockId, pos, e);
+                    }
+                }
+            }
         }
 
-        double celsius = configManager.getTierDefinitions().getCelsius(tier);
+        if (!resolved) {
+            HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
+            if (tier == settings.getAmbientTier()) {
+                ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+                if (dimSources != null && dimSources.containsKey(packed))
+                    return;
+            }
+            celsius = configManager.getTierDefinitions().getCelsius(tier);
+        }
+
         registerSource(dim, pos, packed, celsius);
     }
 
@@ -173,7 +266,7 @@ public class HeatSimulationManager {
         ThermalProperties props = lookupThermalProps(dim, pos);
 
         sourceIndex.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
-                .put(packed, new SourceInfo(celsius, props.getConductivity(), props.getTransferRate()));
+                .put(packed, new SourceInfo(celsius, props.getConductivity(), props.getHeatCapacity()));
 
         ChunkHeatKey chunkKey = new ChunkHeatKey(dim, new ChunkPos(pos));
         chunkSourceIndex.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet())
@@ -264,7 +357,7 @@ public class HeatSimulationManager {
                 ThermalProperties props = lookupThermalProps(dim, p);
                 sourceIndex.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
                         .put(packed,
-                                new SourceInfo(cellEntry.getValue(), props.getConductivity(), props.getTransferRate()));
+                                new SourceInfo(cellEntry.getValue(), props.getConductivity(), props.getHeatCapacity()));
                 ChunkHeatKey chunkKey = new ChunkHeatKey(dim, new ChunkPos(p));
                 chunkSourceIndex.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(packed);
             }
@@ -370,10 +463,10 @@ public class HeatSimulationManager {
         BlockPos sp = BlockPos.of(nearestPacked);
         return String.format(
                 "Nearest source at (%d,%d,%d) dist=%.1f | target=%.1f grid=%.1f | " +
-                        "cond=%.2f xfer=%.2f | frontier=%d grid=%d",
+                        "k=%.2f Cp=%.0f | frontier=%d grid=%d",
                 sp.getX(), sp.getY(), sp.getZ(), Math.sqrt(nearestDist),
                 nearestInfo.temperature(), engine.getTemperature(dim, nearestPacked),
-                nearestInfo.conductivity(), nearestInfo.transferRate(),
+                nearestInfo.conductivity(), nearestInfo.heatCapacity(),
                 engine.getCurrentFrontierSize(), engine.getGridSize());
     }
 

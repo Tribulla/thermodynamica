@@ -16,31 +16,22 @@ import net.minecraft.server.level.ServerPlayer;
 public class ThermodynamicaCommand {
 
         public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-                dispatcher.register(
-                                Commands.literal("thermodynamica")
-                                                .requires(source -> source.hasPermission(2))
-                                                .then(Commands.literal("tps")
-                                                                .executes(ThermodynamicaCommand::executeTps))
-                                                .then(Commands.literal("status")
-                                                                .executes(ThermodynamicaCommand::executeStatus))
-                                                .then(Commands.literal("reset")
-                                                                .executes(ThermodynamicaCommand::executeReset))
-                                                .then(Commands.literal("debug")
-                                                                .executes(ThermodynamicaCommand::executeDebug))
-                                                .executes(ThermodynamicaCommand::executeTps));
+                dispatcher.register(buildRoot("thermodynamica"));
+                dispatcher.register(buildRoot("td"));
+        }
 
-                dispatcher.register(
-                                Commands.literal("td")
-                                                .requires(source -> source.hasPermission(2))
-                                                .then(Commands.literal("tps")
-                                                                .executes(ThermodynamicaCommand::executeTps))
-                                                .then(Commands.literal("status")
-                                                                .executes(ThermodynamicaCommand::executeStatus))
-                                                .then(Commands.literal("reset")
-                                                                .executes(ThermodynamicaCommand::executeReset))
-                                                .then(Commands.literal("debug")
-                                                                .executes(ThermodynamicaCommand::executeDebug))
-                                                .executes(ThermodynamicaCommand::executeTps));
+        private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> buildRoot(String name) {
+                return Commands.literal(name)
+                                .requires(source -> source.hasPermission(2))
+                                .then(Commands.literal("tps")
+                                                .executes(ThermodynamicaCommand::executeTps))
+                                .then(Commands.literal("status")
+                                                .executes(ThermodynamicaCommand::executeStatus))
+                                .then(Commands.literal("reset")
+                                                .executes(ThermodynamicaCommand::executeReset))
+                                .then(Commands.literal("debug")
+                                                .executes(ThermodynamicaCommand::executeDebug))
+                                .executes(ThermodynamicaCommand::executeTps);
         }
 
         private static int executeTps(CommandContext<CommandSourceStack> ctx) {

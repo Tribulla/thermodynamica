@@ -244,8 +244,7 @@ public class HeatSimulationManager {
         }
 
         if (!resolved) {
-            ThermalProperties props = HeatAPI.get().getThermalProperties(blockId);
-            celsius = props.getTemperature().orElse(settings.getAmbientTemperature());
+            celsius = HeatAPI.get().getBaseCelsiusForState(blockId, state);
             
             if (Math.abs(celsius - settings.getAmbientTemperature()) <= settings.getDeltaThreshold()) {
                 ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);

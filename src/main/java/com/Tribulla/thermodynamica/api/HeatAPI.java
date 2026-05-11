@@ -4,6 +4,7 @@ import com.Tribulla.thermodynamica.api.targeting.HeatTarget;
 import com.Tribulla.thermodynamica.api.targeting.HeatTargeting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -28,6 +29,8 @@ public abstract class HeatAPI {
     }
 
     public abstract double getResolvedCelsius(ResourceLocation block, Level level, BlockPos pos);
+
+    public abstract double getBaseCelsiusForState(ResourceLocation block, net.minecraft.world.level.block.state.BlockState state);
 
     public abstract OptionalDouble getSimulatedCelsius(Level level, BlockPos pos);
 

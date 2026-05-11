@@ -10,6 +10,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
@@ -39,10 +40,62 @@ public class HeatAPIImpl extends HeatAPI {
 
     @Override
     public double getResolvedCelsius(ResourceLocation block, Level level, BlockPos pos) {
-        ThermalProperties props = getThermalProperties(block);
-        double baseCelsius = props.getTemperature().orElse(getAmbientTemperature());
+        BlockState state = level.getBlockState(pos);
+        double baseCelsius = getBaseCelsiusForState(block, state);
         double biomeOffset = getBiomeOffset(level, pos);
         return baseCelsius + biomeOffset;
+    }
+
+    @Override
+    public double getBaseCelsiusForState(ResourceLocation block, net.minecraft.world.level.block.state.BlockState state) {
+        ThermalProperties props = getThermalProperties(block);
+        boolean hasExplicitTemp = props.getTemperature().isPresent();
+        double baseCelsius = props.getTemperature().orElse(getAmbientTemperature());
+
+        for (net.minecraft.world.level.block.state.properties.Property<?> prop : state.getProperties()) {
+            String propName = prop.getName();
+
+            // Universal lit check (Minecraft furnaces, campfires, torches, Redstone lamps, etc.)
+            if (propName.equals("lit") && prop.getValueClass() == Boolean.class) {
+                if (!(Boolean) state.getValue(prop)) {
+                    return getAmbientTemperature();
+                } else if (!hasExplicitTemp) {
+                    baseCelsius = 500.0;
+                }
+            }
+
+            // Universal active/enabled check (some mods use this instead of lit)
+            if ((propName.equals("active") || propName.equals("enabled")) && prop.getValueClass() == Boolean.class) {
+                if (!(Boolean) state.getValue(prop)) {
+                    return getAmbientTemperature();
+                } else if (!hasExplicitTemp) {
+                    baseCelsius = 500.0;
+                }
+            }
+
+            // Create's Blaze Burner
+            if (propName.equals("heat_level") || propName.equals("blaze")) {
+                String heatLevel = state.getValue(prop).toString().toLowerCase();
+                if (heatLevel.equals("none")) {
+                    return getAmbientTemperature();
+                } else {
+                    if (!hasExplicitTemp) {
+                        baseCelsius = 1000.0;
+                    }
+                    if (heatLevel.equals("smouldering")) {
+                        return baseCelsius * 0.25;
+                    } else if (heatLevel.equals("fading")) {
+                        return baseCelsius * 0.5;
+                    } else if (heatLevel.equals("kindled")) {
+                        return baseCelsius;
+                    } else if (heatLevel.equals("seething")) {
+                        return baseCelsius * 2.0;
+                    }
+                }
+            }
+        }
+
+        return baseCelsius;
     }
 
     @Override

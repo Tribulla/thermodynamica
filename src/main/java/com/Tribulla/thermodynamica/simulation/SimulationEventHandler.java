@@ -105,9 +105,8 @@ public class SimulationEventHandler {
         if (blockId == null)
             return;
 
-        ThermalProperties props = HeatAPI.get().getThermalProperties(blockId);
         double ambientTemp = instance.getConfigManager().getSettings().getAmbientTemperature();
-        double blockTemp = props.getTemperature().orElse(ambientTemp);
+        double blockTemp = HeatAPI.get().getBaseCelsiusForState(blockId, state);
 
         if (Math.abs(blockTemp - ambientTemp) > instance.getConfigManager().getSettings().getDeltaThreshold()) {
             sim.markActive(level, pos);

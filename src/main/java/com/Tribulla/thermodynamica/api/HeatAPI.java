@@ -27,8 +27,6 @@ public abstract class HeatAPI {
         INSTANCE = instance;
     }
 
-    public abstract HeatTier getResolvedTier(ResourceLocation block);
-
     public abstract double getResolvedCelsius(ResourceLocation block, Level level, BlockPos pos);
 
     public abstract OptionalDouble getSimulatedCelsius(Level level, BlockPos pos);
@@ -41,24 +39,13 @@ public abstract class HeatAPI {
 
     public abstract void forceProcessChunks(int ticks);
 
-    public abstract HeatTier getAmbientTier();
-
-    public abstract void registerBlockTier(ResourceLocation block, HeatTier tier);
+    public abstract double getAmbientTemperature();
 
     public abstract void registerBlockCelsius(ResourceLocation block, double celsius);
 
-    @Nullable
-    public abstract TierResolution resolveBlockTier(ResourceLocation block);
-
-    public abstract void onTierChange(Consumer<TierChangeEvent> listener);
-
     public abstract void onTemperatureChange(Consumer<TemperatureChangeEvent> listener);
 
-    public abstract boolean isInTier(ResourceLocation block, HeatTier tier);
-
     public abstract ThermalProperties getThermalProperties(ResourceLocation block);
-
-    public abstract double getTierCelsius(HeatTier tier);
 
     public abstract double getBiomeOffset(Level level, BlockPos pos);
 

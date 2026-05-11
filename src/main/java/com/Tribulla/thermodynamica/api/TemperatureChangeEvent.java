@@ -9,17 +9,12 @@ public class TemperatureChangeEvent {
     private final BlockPos pos;
     private final double oldCelsius;
     private final double newCelsius;
-    private final HeatTier oldTier;
-    private final HeatTier newTier;
 
-    public TemperatureChangeEvent(Level level, BlockPos pos, double oldCelsius, double newCelsius,
-            HeatTier oldTier, HeatTier newTier) {
+    public TemperatureChangeEvent(Level level, BlockPos pos, double oldCelsius, double newCelsius) {
         this.level = level;
         this.pos = pos;
         this.oldCelsius = oldCelsius;
         this.newCelsius = newCelsius;
-        this.oldTier = oldTier;
-        this.newTier = newTier;
     }
 
     public Level getLevel() {
@@ -36,13 +31,5 @@ public class TemperatureChangeEvent {
 
     public double getNewCelsius() {
         return newCelsius;
-    }
-
-    public HeatTier getOldTier() {
-        return oldTier;
-    }
-
-    public HeatTier getNewTier() {
-        return newTier;
     }
 }

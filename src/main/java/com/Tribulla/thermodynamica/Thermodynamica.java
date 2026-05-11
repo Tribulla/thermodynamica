@@ -1,14 +1,12 @@
 package com.Tribulla.thermodynamica;
 
 import com.Tribulla.thermodynamica.api.HeatAPI;
-import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.api.targeting.HeatTargetingInternal;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.debug.DebugRegistry;
 import com.Tribulla.thermodynamica.network.HeatNetwork;
 import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
-import com.Tribulla.thermodynamica.resource.HeatTierResourceLoader;
 import com.Tribulla.thermodynamica.resource.ThermalPropertyResourceLoader;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
@@ -80,15 +78,6 @@ public class Thermodynamica {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-        for (HeatTier tier : HeatTier.values()) {
-            var blockRO = DebugRegistry.HEAT_SOURCE_BLOCKS.get(tier);
-            if (blockRO != null && blockRO.isPresent()) {
-                Block block = blockRO.get();
-                ResourceLocation blockId = block.builtInRegistryHolder().key().location();
-                heatApi.registerBlockTier(blockId, tier);
-                LOGGER.debug("Registered debug heat source {} → {}", blockId, tier);
-            }
-        }
 
         // Safety net: if LevelEvent.Load didn't attach saved data (e.g. ordering edge case),
         // load it now since the overworld is definitely available at this point.
@@ -136,7 +125,6 @@ public class Thermodynamica {
 
     @SubscribeEvent
     public void onAddReloadListeners(AddReloadListenerEvent event) {
-        event.addListener(new HeatTierResourceLoader(heatApi.getTierRegistry()));
         event.addListener(new ThermalPropertyResourceLoader(configManager.getThermalPropertiesRegistry()));
         LOGGER.info("Thermodynamica resource reload listeners registered");
     }

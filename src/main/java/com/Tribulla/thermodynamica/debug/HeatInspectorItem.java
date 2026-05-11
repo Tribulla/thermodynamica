@@ -1,9 +1,7 @@
 package com.Tribulla.thermodynamica.debug;
 
 import com.Tribulla.thermodynamica.api.HeatAPI;
-import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
-import com.Tribulla.thermodynamica.api.TierResolution;
 import com.Tribulla.thermodynamica.network.DebugInfoPacket;
 import com.Tribulla.thermodynamica.network.HeatNetwork;
 import net.minecraft.core.BlockPos;
@@ -47,22 +45,14 @@ public class HeatInspectorItem extends Item {
 
         HeatAPI api = HeatAPI.get();
 
-        HeatTier tier = api.getResolvedTier(blockId);
         double celsius = api.getSimulatedCelsius(level, pos)
                 .orElseGet(() -> api.getResolvedCelsius(blockId, level, pos));
-
-        TierResolution resolution = api.resolveBlockTier(blockId);
-        String source = resolution != null ? resolution.getSource().name() : "AMBIENT_DEFAULT";
-        int priority = resolution != null ? resolution.getPriority() : 0;
 
         ThermalProperties props = api.getThermalProperties(blockId);
 
         player.sendSystemMessage(Component.literal("§6═══ Heat Inspector ═══"));
         player.sendSystemMessage(Component.literal("§7Block: §f" + blockId));
-        player.sendSystemMessage(Component.literal("§7Tier: §e" + tier.name() + " §7(" + tier.getId() + ")"));
         player.sendSystemMessage(Component.literal(String.format("§7Temperature: §b%.1f °C", celsius)));
-        player.sendSystemMessage(Component.literal("§7Source: §a" + source));
-        player.sendSystemMessage(Component.literal("§7Priority: §d" + priority));
         player.sendSystemMessage(Component.literal(String.format("§7Conductivity: §f%.2f", props.getConductivity())));
         player.sendSystemMessage(Component.literal(String.format("§7Heat Capacity: §f%.0f J/K", props.getHeatCapacity())));
         player.sendSystemMessage(
@@ -72,7 +62,7 @@ public class HeatInspectorItem extends Item {
 
         HeatNetwork.CHANNEL.send(
                 PacketDistributor.PLAYER.with(() -> player),
-                new DebugInfoPacket(pos, tier.name(), celsius, source, priority,
+                new DebugInfoPacket(pos, blockId.toString(), celsius,
                         props.getConductivity(), props.getDissipationRate()));
 
         return InteractionResult.SUCCESS;

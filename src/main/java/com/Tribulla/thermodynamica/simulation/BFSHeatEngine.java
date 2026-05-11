@@ -144,7 +144,7 @@ public class BFSHeatEngine {
     }
 
     public void refreshConfig() {
-        this.ambientTemp = configManager.getTierDefinitions().getCelsius(settings.getAmbientTier());
+        this.ambientTemp = settings.getAmbientTemperature();
         this.deltaThreshold = settings.getDeltaThreshold();
         this.airInsulates = settings.isAirInsulates();
         this.waterTransferMult = settings.getWaterTransferMultiplier();

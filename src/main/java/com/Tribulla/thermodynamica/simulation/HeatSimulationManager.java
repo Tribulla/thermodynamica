@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.EnergyOutputProvider;
 import com.Tribulla.thermodynamica.api.HeatAPI;
-import com.Tribulla.thermodynamica.api.HeatTier;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
 import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
@@ -203,7 +202,7 @@ public class HeatSimulationManager {
 
     public void setTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
         ResourceLocation dim = level.dimension().location();
-        double ambient = configManager.getTierDefinitions().getCelsius(settings.getAmbientTier());
+        double ambient = settings.getAmbientTemperature();
         long packed = pos.asLong();
 
         if (Math.abs(celsius - ambient) > settings.getDeltaThreshold()) {
@@ -245,13 +244,14 @@ public class HeatSimulationManager {
         }
 
         if (!resolved) {
-            HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
-            if (tier == settings.getAmbientTier()) {
+            ThermalProperties props = HeatAPI.get().getThermalProperties(blockId);
+            celsius = props.getTemperature().orElse(settings.getAmbientTemperature());
+            
+            if (Math.abs(celsius - settings.getAmbientTemperature()) <= settings.getDeltaThreshold()) {
                 ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
                 if (dimSources != null && dimSources.containsKey(packed))
                     return;
             }
-            celsius = configManager.getTierDefinitions().getCelsius(tier);
         }
 
         registerSource(dim, pos, packed, celsius);

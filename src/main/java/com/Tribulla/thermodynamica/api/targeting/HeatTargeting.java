@@ -229,7 +229,7 @@ public final class HeatTargeting {
         HeatAPI api = HeatAPI.get();
         
         // Get the ambient temperature as baseline
-        double ambientCelsius = api.getTierCelsius(api.getAmbientTier());
+        double ambientCelsius = api.getAmbientTemperature();
         double effectiveMinCelsius = Math.max(minCelsius, ambientCelsius + 10); // At least 10° above ambient
         
         // Scan the area for heat sources

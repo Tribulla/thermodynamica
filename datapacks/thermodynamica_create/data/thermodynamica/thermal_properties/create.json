@@ -1,20 +1,26 @@
 {
     "blocks": {
         "create:fluid_pipe": {
-            "conductivity": 1.2,
-            "heat_capacity": 1500
+            "conductivity": 6,
+            "heat_capacity": 75
         },
         "create:encased_fluid_pipe": {
-            "conductivity": 0.5,
-            "heat_capacity": 1800
+            "conductivity": 2.5,
+            "heat_capacity": 90
         },
         "create:copper_casing": {
-            "conductivity": 3.0,
-            "heat_capacity": 3000
+            "conductivity": 15,
+            "heat_capacity": 150
         },
         "create:andesite_casing": {
-            "conductivity": 0.8,
-            "heat_capacity": 2000
+            "conductivity": 4,
+            "heat_capacity": 100
+        },
+        "create:blaze_burner": {
+            "temperature": 1000.0
+        },
+        "create:lit_blaze_burner": {
+            "temperature": 1000.0
         }
     }
 }

@@ -15,12 +15,12 @@ public class ClientHeatCache {
 
     private static volatile DebugInfoPacket lastDebugInfo;
 
-    public static void update(BlockPos pos, double celsius, int tierOrdinal) {
-        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, tierOrdinal);
+    public static void update(BlockPos pos, double celsius) {
+        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius);
     }
 
-    public static void update(BlockPos pos, double celsius, int tierOrdinal, BlockPos renderStatePos, Vec3 worldCenter) {
-        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, tierOrdinal, renderStatePos, worldCenter);
+    public static void update(BlockPos pos, double celsius, BlockPos renderStatePos, Vec3 worldCenter) {
+        com.Tribulla.thermodynamica.api.ClientHeatCache.update(pos, celsius, renderStatePos, worldCenter);
     }
 
     @Nullable
@@ -49,6 +49,6 @@ public class ClientHeatCache {
      * @deprecated Use {@link com.Tribulla.thermodynamica.api.CachedHeatEntry} instead.
      */
     @Deprecated
-    public record CachedHeatEntry(double celsius, int tierOrdinal) {
+    public record CachedHeatEntry(double celsius) {
     }
 }

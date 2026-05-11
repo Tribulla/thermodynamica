@@ -46,7 +46,7 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
 
                 // Add support for direct block files if preferred:
                 // e.g. "thermodynamica:thermal_properties/minecraft/cobblestone.json"
-                if (json.has("conductivity") || json.has("heat_capacity")) {
+                if (json.has("conductivity") || json.has("heat_capacity") || json.has("temperature")) {
                     registry.registerOverride(fileLocation, parseProps(json));
                 }
 
@@ -65,6 +65,7 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
                 : ThermalProperties.DEFAULT_HEAT_CAPACITY;
         double dissipationRate = obj.has("dissipation_rate") ? obj.get("dissipation_rate").getAsDouble()
                 : ThermalProperties.DEFAULT_DISSIPATION_RATE;
-        return new ThermalProperties(conductivity, heatCapacity, dissipationRate);
+        java.util.OptionalDouble temperature = obj.has("temperature") ? java.util.OptionalDouble.of(obj.get("temperature").getAsDouble()) : java.util.OptionalDouble.empty();
+        return new ThermalProperties(conductivity, heatCapacity, dissipationRate, temperature);
     }
 }

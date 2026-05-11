@@ -1,6 +1,5 @@
 package com.Tribulla.thermodynamica.config;
 
-import com.Tribulla.thermodynamica.api.HeatTier;
 import com.google.gson.JsonObject;
 
 public class SimulationSettings implements ConfigSection {
@@ -8,7 +7,7 @@ public class SimulationSettings implements ConfigSection {
     private int workerThreads = 2;
     private int workBudgetPerTick = 50000;
     private boolean gracefulDegradation = true;
-    private int simulationIntervalTicks = 20;
+    private int simulationIntervalTicks = 10;
     private double deltaThreshold = 0.5;
     private boolean airInsulates = true;
     private double waterTransferMultiplier = 2.0;
@@ -21,9 +20,9 @@ public class SimulationSettings implements ConfigSection {
     private int syncRange = 64;
     private boolean debugMode = false;
     private int maxPropagationRadius = 16;
-    private int ticksPerRadiusStep = 5;
-    private double temperatureRampRate = 0.15;
-    private HeatTier ambientTier = HeatTier.POS1;
+    private int ticksPerRadiusStep = 2;
+    private double temperatureRampRate = 0.35;
+    private double ambientTemperature = 20.0;
 
     @Override
     public void load(JsonObject json) {
@@ -63,8 +62,8 @@ public class SimulationSettings implements ConfigSection {
             ticksPerRadiusStep = Math.max(1, json.get("ticks_per_radius_step").getAsInt());
         if (json.has("temperature_ramp_rate"))
             temperatureRampRate = Math.max(0.01, Math.min(1.0, json.get("temperature_ramp_rate").getAsDouble()));
-        if (json.has("ambient_tier"))
-            ambientTier = HeatTier.fromId(json.get("ambient_tier").getAsString());
+        if (json.has("ambient_temperature"))
+            ambientTemperature = json.get("ambient_temperature").getAsDouble();
     }
 
     @Override
@@ -89,7 +88,7 @@ public class SimulationSettings implements ConfigSection {
         json.addProperty("max_propagation_radius", maxPropagationRadius);
         json.addProperty("ticks_per_radius_step", ticksPerRadiusStep);
         json.addProperty("temperature_ramp_rate", temperatureRampRate);
-        json.addProperty("ambient_tier", ambientTier.getId());
+        json.addProperty("ambient_temperature", ambientTemperature);
 
         return json;
     }
@@ -154,8 +153,8 @@ public class SimulationSettings implements ConfigSection {
         return debugMode;
     }
 
-    public HeatTier getAmbientTier() {
-        return ambientTier;
+    public double getAmbientTemperature() {
+        return ambientTemperature;
     }
 
     public int getMaxPropagationRadius() {

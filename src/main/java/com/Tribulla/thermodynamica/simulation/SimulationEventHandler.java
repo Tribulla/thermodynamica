@@ -2,7 +2,7 @@ package com.Tribulla.thermodynamica.simulation;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.HeatAPI;
-import com.Tribulla.thermodynamica.api.HeatTier;
+import com.Tribulla.thermodynamica.api.ThermalProperties;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -105,10 +105,11 @@ public class SimulationEventHandler {
         if (blockId == null)
             return;
 
-        HeatTier tier = HeatAPI.get().getResolvedTier(blockId);
-        HeatTier ambientTier = instance.getConfigManager().getSettings().getAmbientTier();
+        ThermalProperties props = HeatAPI.get().getThermalProperties(blockId);
+        double ambientTemp = instance.getConfigManager().getSettings().getAmbientTemperature();
+        double blockTemp = props.getTemperature().orElse(ambientTemp);
 
-        if (tier != ambientTier) {
+        if (Math.abs(blockTemp - ambientTemp) > instance.getConfigManager().getSettings().getDeltaThreshold()) {
             sim.markActive(level, pos);
         } else {
             sim.markInactive(level, pos);

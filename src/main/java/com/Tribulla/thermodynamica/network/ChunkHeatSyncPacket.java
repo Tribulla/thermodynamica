@@ -56,7 +56,7 @@ public class ChunkHeatSyncPacket {
         ctx.get().enqueueWork(() -> {
             for (Map.Entry<BlockPos, HeatData> entry : packet.temperatures.entrySet()) {
                 HeatData data = entry.getValue();
-                ClientHeatCache.update(entry.getKey(), data.celsius(), -1, data.renderStatePos(), data.worldCenter());
+                ClientHeatCache.update(entry.getKey(), data.celsius(), data.renderStatePos(), data.worldCenter());
             }
         });
         ctx.get().setPacketHandled(true);

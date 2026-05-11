@@ -9,30 +9,24 @@ import java.util.function.Supplier;
 public class DebugInfoPacket {
 
     private final BlockPos pos;
-    private final String tierName;
+    private final String blockName;
     private final double celsius;
-    private final String source;
-    private final int priority;
     private final double conductivity;
     private final double dissipationRate;
 
-    public DebugInfoPacket(BlockPos pos, String tierName, double celsius, String source,
-            int priority, double conductivity, double dissipationRate) {
+    public DebugInfoPacket(BlockPos pos, String blockName, double celsius,
+            double conductivity, double dissipationRate) {
         this.pos = pos;
-        this.tierName = tierName;
+        this.blockName = blockName;
         this.celsius = celsius;
-        this.source = source;
-        this.priority = priority;
         this.conductivity = conductivity;
         this.dissipationRate = dissipationRate;
     }
 
     public static void encode(DebugInfoPacket packet, FriendlyByteBuf buf) {
         buf.writeBlockPos(packet.pos);
-        buf.writeUtf(packet.tierName);
+        buf.writeUtf(packet.blockName);
         buf.writeDouble(packet.celsius);
-        buf.writeUtf(packet.source);
-        buf.writeVarInt(packet.priority);
         buf.writeDouble(packet.conductivity);
         buf.writeDouble(packet.dissipationRate);
     }
@@ -42,8 +36,6 @@ public class DebugInfoPacket {
                 buf.readBlockPos(),
                 buf.readUtf(),
                 buf.readDouble(),
-                buf.readUtf(),
-                buf.readVarInt(),
                 buf.readDouble(),
                 buf.readDouble());
     }
@@ -59,20 +51,12 @@ public class DebugInfoPacket {
         return pos;
     }
 
-    public String getTierName() {
-        return tierName;
+    public String getBlockName() {
+        return blockName;
     }
 
     public double getCelsius() {
         return celsius;
-    }
-
-    public String getSource() {
-        return source;
-    }
-
-    public int getPriority() {
-        return priority;
     }
 
     public double getConductivity() {

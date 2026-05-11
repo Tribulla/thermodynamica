@@ -25,14 +25,13 @@ public class ClientHeatCache {
      * 
      * @param pos the block position
      * @param celsius temperature in Celsius
-     * @param tierOrdinal the heat tier ordinal, or -1 if unknown
      */
-    public static void update(BlockPos pos, double celsius, int tierOrdinal) {
-        update(pos, celsius, tierOrdinal, pos, Vec3.atCenterOf(pos));
+    public static void update(BlockPos pos, double celsius) {
+        update(pos, celsius, pos, Vec3.atCenterOf(pos));
     }
 
-    public static void update(BlockPos pos, double celsius, int tierOrdinal, BlockPos renderStatePos, Vec3 worldCenter) {
-        cache.put(pos.immutable(), new CachedHeatEntry(celsius, tierOrdinal,
+    public static void update(BlockPos pos, double celsius, BlockPos renderStatePos, Vec3 worldCenter) {
+        cache.put(pos.immutable(), new CachedHeatEntry(celsius,
                 renderStatePos.immutable(), worldCenter));
     }
     

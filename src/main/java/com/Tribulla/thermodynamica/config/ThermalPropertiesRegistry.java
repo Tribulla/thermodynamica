@@ -44,7 +44,8 @@ public class ThermalPropertiesRegistry {
                 : ThermalProperties.DEFAULT_HEAT_CAPACITY;
         double dissipationRate = obj.has("dissipation_rate") ? obj.get("dissipation_rate").getAsDouble()
                 : ThermalProperties.DEFAULT_DISSIPATION_RATE;
-        return new ThermalProperties(conductivity, heatCapacity, dissipationRate);
+        java.util.OptionalDouble temperature = obj.has("temperature") ? java.util.OptionalDouble.of(obj.get("temperature").getAsDouble()) : java.util.OptionalDouble.empty();
+        return new ThermalProperties(conductivity, heatCapacity, dissipationRate, temperature);
     }
 
     @Nullable

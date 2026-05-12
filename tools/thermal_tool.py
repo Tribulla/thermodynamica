@@ -24,38 +24,43 @@ class ThermalConfigTool:
 
         # Conductivity (k, W/m*K) — Fourier conduction strength
         ttk.Label(main_frame, text="Conductivity (k, W/m*K):").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.conductivity = tk.DoubleVar(value=1.0)
+        self.conductivity = tk.DoubleVar(value=5.0)
         ttk.Scale(main_frame, from_=0.0, to=10.0, variable=self.conductivity, orient=tk.HORIZONTAL).grid(row=1, column=1, sticky=tk.EW, pady=5)
         ttk.Entry(main_frame, textvariable=self.conductivity, width=10).grid(row=1, column=2, padx=5)
 
         # Heat Capacity (Cp, J/K) — thermal mass per block
         ttk.Label(main_frame, text="Heat Capacity (Cp, J/K):").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.heat_capacity = tk.DoubleVar(value=1000.0)
-        ttk.Scale(main_frame, from_=100.0, to=5000.0, variable=self.heat_capacity, orient=tk.HORIZONTAL).grid(row=2, column=1, sticky=tk.EW, pady=5)
+        self.heat_capacity = tk.DoubleVar(value=200.0)
+        ttk.Scale(main_frame, from_=100.0, to=2500.0, variable=self.heat_capacity, orient=tk.HORIZONTAL).grid(row=2, column=1, sticky=tk.EW, pady=5)
         ttk.Entry(main_frame, textvariable=self.heat_capacity, width=10).grid(row=2, column=2, padx=5)
 
         # Dissipation Rate (h, W/m^2*K) — convective heat transfer coefficient
         ttk.Label(main_frame, text="Dissipation (h, W/m^2*K):").grid(row=3, column=0, sticky=tk.W, pady=5)
-        self.dissipation_rate = tk.DoubleVar(value=0.05)
+        self.dissipation_rate = tk.DoubleVar(value=0.08)
         ttk.Scale(main_frame, from_=0.0, to=1.0, variable=self.dissipation_rate, orient=tk.HORIZONTAL).grid(row=3, column=1, sticky=tk.EW, pady=5)
         ttk.Entry(main_frame, textvariable=self.dissipation_rate, width=10).grid(row=3, column=2, padx=5)
 
-        ttk.Separator(main_frame, orient=tk.HORIZONTAL).grid(row=4, column=0, columnspan=3, sticky=tk.EW, pady=20)
+        ttk.Label(main_frame, text="Temperature (°C)").grid(row=4, column=0, sticky=tk.W, pady=5)
+        self.temperature = tk.DoubleVar(value=20)
+        ttk.Scale(main_frame, from_=0.0, to=5000.0, variable=self.temperature, orient=tk.HORIZONTAL).grid(row=4, column=1, sticky=tk.EW, pady=5)
+        ttk.Entry(main_frame, textvariable=self.temperature, width=10).grid(row=4, column=2, padx=5)
+
+        ttk.Separator(main_frame, orient=tk.HORIZONTAL).grid(row=5, column=0, columnspan=3, sticky=tk.EW, pady=20)
 
         # Save Options
         self.save_mode = tk.StringVar(value="existing")
-        ttk.Radiobutton(main_frame, text="Update Existing JSON File", variable=self.save_mode, value="existing").grid(row=5, column=0, columnspan=2, sticky=tk.W)
-        ttk.Radiobutton(main_frame, text="Create Brand New Data Pack", variable=self.save_mode, value="new").grid(row=6, column=0, columnspan=2, sticky=tk.W)
+        ttk.Radiobutton(main_frame, text="Update Existing JSON File", variable=self.save_mode, value="existing").grid(row=6, column=0, columnspan=2, sticky=tk.W)
+        ttk.Radiobutton(main_frame, text="Create Brand New Data Pack", variable=self.save_mode, value="new").grid(row=7, column=0, columnspan=2, sticky=tk.W)
 
         # Action Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=7, column=0, columnspan=3, pady=20)
+        button_frame.grid(row=8, column=0, columnspan=3, pady=20)
         
         ttk.Button(button_frame, text="Process Action", command=self.handle_save).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="Exit", command=self.root.quit).pack(side=tk.LEFT, padx=10)
 
         status_frame = ttk.LabelFrame(main_frame, text="Status Output")
-        status_frame.grid(row=8, column=0, columnspan=3, sticky=tk.NSEW, pady=10)
+        status_frame.grid(row=9, column=0, columnspan=3, sticky=tk.NSEW, pady=10)
         self.status_text = tk.Text(status_frame, height=5, width=60)
         self.status_text.pack(padx=5, pady=5)
 
@@ -74,7 +79,8 @@ class ThermalConfigTool:
         props = {
             "conductivity": round(self.conductivity.get(), 3),
             "heat_capacity": round(self.heat_capacity.get(), 1),
-            "dissipation_rate": round(self.dissipation_rate.get(), 3)
+            "dissipation_rate": round(self.dissipation_rate.get(), 3),
+            "temperature": round(self.temperature.get(), 1)
         }
 
         if mode == "existing":

@@ -37,6 +37,7 @@ public class HeatSimulationManager {
 
     private int tickCounter = 0;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final ConcurrentHashMap<GlobalBlockPos, Double> transientUpdateQueue = new ConcurrentHashMap<>();
 
     private HeatSavedData savedData;
 
@@ -92,8 +93,34 @@ public class HeatSimulationManager {
         }
 
         pollDynamicSources();
+        processTransientUpdates();
 
         engine.tick();
+    }
+
+    private void processTransientUpdates() {
+        if (transientUpdateQueue.isEmpty())
+            return;
+
+        // Take a snapshot of the queue to process
+        java.util.Map<GlobalBlockPos, Double> updates = new java.util.HashMap<>();
+        transientUpdateQueue.forEach((pos, temp) -> updates.put(pos, temp));
+        transientUpdateQueue.clear();
+
+        for (Map.Entry<GlobalBlockPos, Double> entry : updates.entrySet()) {
+            GlobalBlockPos globalPos = entry.getKey();
+            ResourceLocation dim = globalPos.getDimension();
+            BlockPos pos = globalPos.getPos();
+            long packed = pos.asLong();
+            double celsius = entry.getValue();
+
+            ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+            if (dimSources != null && dimSources.containsKey(packed)) {
+                unregisterSource(dim, pos, packed);
+            }
+
+            engine.setCellTemperature(dim, packed, celsius);
+        }
     }
 
     private void cleanupStaleChunks() {
@@ -213,15 +240,7 @@ public class HeatSimulationManager {
     }
 
     public void setTransientTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
-        ResourceLocation dim = level.dimension().location();
-        long packed = pos.asLong();
-
-        ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
-        if (dimSources != null && dimSources.containsKey(packed)) {
-            unregisterSource(dim, pos, packed);
-        }
-
-        engine.setCellTemperature(dim, packed, celsius);
+        transientUpdateQueue.put(new GlobalBlockPos(level.dimension().location(), pos), celsius);
     }
 
     public void markActive(net.minecraft.world.level.Level level, BlockPos pos) {

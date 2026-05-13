@@ -36,6 +36,12 @@ public abstract class HeatAPI {
 
     public abstract void setTemperature(Level level, BlockPos pos, double celsius);
 
+    /**
+     * Sets a cell temperature without registering a persistent heat source.
+     * The value will diffuse/decay normally with the simulation.
+     */
+    public abstract void setTransientTemperature(Level level, BlockPos pos, double celsius);
+
     public abstract double getVisualCelsius(Level level, BlockPos pos);
 
     public abstract Map<BlockPos, Double> getSimulatedSourcesInChunk(Level level, ChunkPos pos);

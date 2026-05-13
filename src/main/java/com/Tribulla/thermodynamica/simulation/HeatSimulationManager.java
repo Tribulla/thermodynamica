@@ -212,6 +212,18 @@ public class HeatSimulationManager {
         }
     }
 
+    public void setTransientTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
+        ResourceLocation dim = level.dimension().location();
+        long packed = pos.asLong();
+
+        ConcurrentHashMap<Long, SourceInfo> dimSources = sourceIndex.get(dim);
+        if (dimSources != null && dimSources.containsKey(packed)) {
+            unregisterSource(dim, pos, packed);
+        }
+
+        engine.setCellTemperature(dim, packed, celsius);
+    }
+
     public void markActive(net.minecraft.world.level.Level level, BlockPos pos) {
         ResourceLocation dim = level.dimension().location();
         BlockState state = level.getBlockState(pos);

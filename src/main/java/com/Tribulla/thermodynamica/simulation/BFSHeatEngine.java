@@ -766,6 +766,28 @@ public class BFSHeatEngine {
         addSource(dim, packedPos, temperature);
     }
 
+    public void setCellTemperature(ResourceLocation dim, long packedPos, double temperature) {
+        ConcurrentHashMap<Long, AtomicCell> grid = grids.computeIfAbsent(dim,
+                k -> new ConcurrentHashMap<>());
+        AtomicCell cell = grid.computeIfAbsent(packedPos, k -> new AtomicCell(ambientTemp, 0.0));
+        double oldTemp = cell.getCurrent();
+
+        cell.setCurrent(temperature);
+        cell.setDelta(0.0);
+
+        trackCellInChunk(dim, packedPos);
+        positionDimensions.putIfAbsent(packedPos, dim);
+
+        propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
+                .putIfAbsent(packedPos, resolveProps(dim, packedPos));
+
+        dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
+
+        if (Math.abs(temperature - oldTemp) > deltaThreshold) {
+            if (frontierSet.add(packedPos)) frontier.add(packedPos);
+        }
+    }
+
     public void removeSource(ResourceLocation dim, long packedPos) {
         ConcurrentHashMap<Long, Double> dimSources = sourceTemps.get(dim);
         if (dimSources != null) {

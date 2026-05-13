@@ -34,6 +34,7 @@ To use the simulation, you must install at least one thermal Data Pack into your
 
 ## 📜 Credits
 - **Tribulla**: Everything
+- **edward_wong_hau_pepelu_tivruski4**: Transient heat API
 
 ---
 *Developed for modern Minecraft versions using Forge.*

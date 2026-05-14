@@ -2,6 +2,9 @@ package com.Tribulla.thermodynamica.simulation;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
+import com.Tribulla.thermodynamica.api.HeatAPI;
+import com.Tribulla.thermodynamica.api.TemperatureChangeEvent;
+import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.config.SimulationSettings;
 import com.Tribulla.thermodynamica.config.ThermalPropertiesRegistry;
@@ -418,6 +421,8 @@ public class BFSHeatEngine {
 
                 trackCellInChunk(dim, pos);
 
+                fireTemperatureChange(dim, pos, oldTemp, targetTemp);
+
                 if (Math.abs(targetTemp - oldTemp) > deltaThreshold) {
                     positionDimensions.putIfAbsent(pos, dim);
                     if (frontierSet.add(pos)) frontier.add(pos);
@@ -502,6 +507,22 @@ public class BFSHeatEngine {
             return DEFAULT_PROPS;
         CachedProps props = dimCache.get(packedPos);
         return props != null ? props : DEFAULT_PROPS;
+    }
+
+    // Centralized helper to fire TemperatureChangeEvent with biome offset and safety checks.
+    private void fireTemperatureChange(ResourceLocation dim, long packedPos, double oldTemp, double newTemp) {
+        if (Math.abs(newTemp - oldTemp) <= deltaThreshold) return;
+        HeatAPI api = HeatAPI.get();
+        if (!(api instanceof HeatAPIImpl apiImpl)) return;
+        ServerLevel level = getLevelForDim(dim);
+        if (level == null) return;
+        BlockPos bpos = BlockPos.of(packedPos);
+        double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+        double oldWorld = oldTemp + biomeOffset;
+        double newWorld = newTemp + biomeOffset;
+        if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+            apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+        }
     }
 
     private void computeBatch(long[] batch, Set<Long> currentFrontier) {
@@ -667,7 +688,10 @@ public class BFSHeatEngine {
                 if (isSource) {
                     Double sourceTemp = dimSources.get(pos);
                     if (sourceTemp != null) {
+                        double oldTemp = cell.getCurrent();
                         cell.setCurrent(sourceTemp);
+
+                        fireTemperatureChange(dim, pos, oldTemp, sourceTemp);
                     }
                     changed++;
                     if (Math.abs(delta) > (deltaThreshold * 0.5)) {
@@ -675,8 +699,12 @@ public class BFSHeatEngine {
                         if (nextFrontierSet.add(pos)) nextFrontier.add(pos);
                     }
                 } else if (Math.abs(delta) > 0.001) {
-                    cell.setCurrent(cell.getCurrent() + delta);
+                    double oldTemp = cell.getCurrent();
+                    double newTemp = oldTemp + delta;
+                    cell.setCurrent(newTemp);
                     changed++;
+
+                    fireTemperatureChange(dim, pos, oldTemp, newTemp);
 
                     if (Math.abs(delta) > (deltaThreshold * 0.1)) {
                         positionDimensions.putIfAbsent(pos, dim);
@@ -752,6 +780,7 @@ public class BFSHeatEngine {
         ConcurrentHashMap<Long, AtomicCell> grid = grids.computeIfAbsent(dim,
                 k -> new ConcurrentHashMap<>());
         AtomicCell cell = grid.computeIfAbsent(packedPos, k -> new AtomicCell(ambientTemp, 0.0));
+        double oldTemp = cell.getCurrent();
         cell.setCurrent(temperature);
 
         trackCellInChunk(dim, packedPos);
@@ -760,6 +789,8 @@ public class BFSHeatEngine {
 
         propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
                 .put(packedPos, resolveProps(dim, packedPos));
+
+        fireTemperatureChange(dim, packedPos, oldTemp, temperature);
     }
 
     public void updateSource(ResourceLocation dim, long packedPos, double temperature) {
@@ -786,6 +817,8 @@ public class BFSHeatEngine {
         if (Math.abs(temperature - oldTemp) > deltaThreshold) {
             if (frontierSet.add(packedPos)) frontier.add(packedPos);
         }
+
+        fireTemperatureChange(dim, packedPos, oldTemp, temperature);
     }
 
     public void removeSource(ResourceLocation dim, long packedPos) {
@@ -797,9 +830,12 @@ public class BFSHeatEngine {
         ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
         if (grid != null) {
             AtomicCell cell = grid.get(packedPos);
-            if (cell != null) {
+                if (cell != null) {
+                double oldTemp = cell.getCurrent();
                 cell.setCurrent(ambientTemp);
                 cell.setDelta(0.0);
+
+                fireTemperatureChange(dim, packedPos, oldTemp, ambientTemp);
             }
         }
 

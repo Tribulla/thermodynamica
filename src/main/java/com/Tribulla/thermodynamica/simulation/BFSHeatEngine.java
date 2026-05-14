@@ -2,6 +2,9 @@ package com.Tribulla.thermodynamica.simulation;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
 import com.Tribulla.thermodynamica.api.ThermalProperties;
+import com.Tribulla.thermodynamica.api.HeatAPI;
+import com.Tribulla.thermodynamica.api.TemperatureChangeEvent;
+import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.config.SimulationSettings;
 import com.Tribulla.thermodynamica.config.ThermalPropertiesRegistry;
@@ -418,6 +421,25 @@ public class BFSHeatEngine {
 
                 trackCellInChunk(dim, pos);
 
+                // Fire temperature change event (world-space, includes biome offset)
+                try {
+                    HeatAPI api = HeatAPI.get();
+                    if (api instanceof HeatAPIImpl apiImpl) {
+                        ServerLevel level = getLevelForDim(dim);
+                        if (level != null) {
+                            BlockPos bpos = BlockPos.of(pos);
+                            double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                            double oldWorld = oldTemp + biomeOffset;
+                            double newWorld = targetTemp + biomeOffset;
+                            if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                                apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Thermodynamica.LOGGER.warn("Error firing temperature change event for injected source at {}", pos, e);
+                }
+
                 if (Math.abs(targetTemp - oldTemp) > deltaThreshold) {
                     positionDimensions.putIfAbsent(pos, dim);
                     if (frontierSet.add(pos)) frontier.add(pos);
@@ -667,7 +689,27 @@ public class BFSHeatEngine {
                 if (isSource) {
                     Double sourceTemp = dimSources.get(pos);
                     if (sourceTemp != null) {
+                        double oldTemp = cell.getCurrent();
                         cell.setCurrent(sourceTemp);
+
+                        // Fire temperature change event
+                        try {
+                            HeatAPI api = HeatAPI.get();
+                            if (api instanceof HeatAPIImpl apiImpl) {
+                                ServerLevel level = getLevelForDim(dim);
+                                if (level != null) {
+                                    BlockPos bpos = BlockPos.of(pos);
+                                    double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                                    double oldWorld = oldTemp + biomeOffset;
+                                    double newWorld = sourceTemp + biomeOffset;
+                                    if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                                        apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            Thermodynamica.LOGGER.warn("Error firing temperature change event during delta apply (source) at {}", pos, e);
+                        }
                     }
                     changed++;
                     if (Math.abs(delta) > (deltaThreshold * 0.5)) {
@@ -675,8 +717,29 @@ public class BFSHeatEngine {
                         if (nextFrontierSet.add(pos)) nextFrontier.add(pos);
                     }
                 } else if (Math.abs(delta) > 0.001) {
-                    cell.setCurrent(cell.getCurrent() + delta);
+                    double oldTemp = cell.getCurrent();
+                    double newTemp = oldTemp + delta;
+                    cell.setCurrent(newTemp);
                     changed++;
+
+                    // Fire temperature change event for delta-applied change
+                    try {
+                        HeatAPI api = HeatAPI.get();
+                        if (api instanceof HeatAPIImpl apiImpl) {
+                            ServerLevel level = getLevelForDim(dim);
+                            if (level != null) {
+                                BlockPos bpos = BlockPos.of(pos);
+                                double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                                double oldWorld = oldTemp + biomeOffset;
+                                double newWorld = newTemp + biomeOffset;
+                                if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                                    apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        Thermodynamica.LOGGER.warn("Error firing temperature change event during delta apply at {}", pos, e);
+                    }
 
                     if (Math.abs(delta) > (deltaThreshold * 0.1)) {
                         positionDimensions.putIfAbsent(pos, dim);
@@ -752,6 +815,7 @@ public class BFSHeatEngine {
         ConcurrentHashMap<Long, AtomicCell> grid = grids.computeIfAbsent(dim,
                 k -> new ConcurrentHashMap<>());
         AtomicCell cell = grid.computeIfAbsent(packedPos, k -> new AtomicCell(ambientTemp, 0.0));
+        double oldTemp = cell.getCurrent();
         cell.setCurrent(temperature);
 
         trackCellInChunk(dim, packedPos);
@@ -760,6 +824,25 @@ public class BFSHeatEngine {
 
         propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
                 .put(packedPos, resolveProps(dim, packedPos));
+
+        // Fire temperature change event
+        try {
+            HeatAPI api = HeatAPI.get();
+            if (api instanceof HeatAPIImpl apiImpl) {
+                ServerLevel level = getLevelForDim(dim);
+                if (level != null) {
+                    BlockPos bpos = BlockPos.of(packedPos);
+                    double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                    double oldWorld = oldTemp + biomeOffset;
+                    double newWorld = temperature + biomeOffset;
+                    if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                        apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Thermodynamica.LOGGER.warn("Error firing temperature change event for added source at {}", packedPos, e);
+        }
     }
 
     public void updateSource(ResourceLocation dim, long packedPos, double temperature) {
@@ -786,6 +869,25 @@ public class BFSHeatEngine {
         if (Math.abs(temperature - oldTemp) > deltaThreshold) {
             if (frontierSet.add(packedPos)) frontier.add(packedPos);
         }
+
+        // Fire temperature change event for manual cell set
+        try {
+            HeatAPI api = HeatAPI.get();
+            if (api instanceof HeatAPIImpl apiImpl) {
+                ServerLevel level = getLevelForDim(dim);
+                if (level != null) {
+                    BlockPos bpos = BlockPos.of(packedPos);
+                    double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                    double oldWorld = oldTemp + biomeOffset;
+                    double newWorld = temperature + biomeOffset;
+                    if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                        apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Thermodynamica.LOGGER.warn("Error firing temperature change event for setCellTemperature at {}", packedPos, e);
+        }
     }
 
     public void removeSource(ResourceLocation dim, long packedPos) {
@@ -798,8 +900,28 @@ public class BFSHeatEngine {
         if (grid != null) {
             AtomicCell cell = grid.get(packedPos);
             if (cell != null) {
+                double oldTemp = cell.getCurrent();
                 cell.setCurrent(ambientTemp);
                 cell.setDelta(0.0);
+
+                // Fire temperature change event for source removal
+                try {
+                    HeatAPI api = HeatAPI.get();
+                    if (api instanceof HeatAPIImpl apiImpl) {
+                        ServerLevel level = getLevelForDim(dim);
+                        if (level != null) {
+                            BlockPos bpos = BlockPos.of(packedPos);
+                            double biomeOffset = configManager.getBiomeConfig().getOffset(level.getBiome(bpos));
+                            double oldWorld = oldTemp + biomeOffset;
+                            double newWorld = ambientTemp + biomeOffset;
+                            if (Math.abs(newWorld - oldWorld) > deltaThreshold) {
+                                apiImpl.fireTemperatureChange(new TemperatureChangeEvent(level, bpos, oldWorld, newWorld));
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Thermodynamica.LOGGER.warn("Error firing temperature change event for removed source at {}", packedPos, e);
+                }
             }
         }
 

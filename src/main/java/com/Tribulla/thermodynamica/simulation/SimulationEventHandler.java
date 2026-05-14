@@ -64,6 +64,7 @@ public class SimulationEventHandler {
 
         BlockPos pos = event.getPos();
         BlockState state = event.getPlacedBlock();
+        instance.getSimulationManager().onBlockChanged(level, pos);
         checkAndRegisterSource(level, pos, state, instance);
     }
 
@@ -76,7 +77,9 @@ public class SimulationEventHandler {
         if (instance == null || instance.getSimulationManager() == null)
             return;
 
-        instance.getSimulationManager().markInactive(level, event.getPos());
+        BlockPos pos = event.getPos();
+        instance.getSimulationManager().onBlockChanged(level, pos);
+        instance.getSimulationManager().markInactive(level, pos);
     }
 
     @SubscribeEvent

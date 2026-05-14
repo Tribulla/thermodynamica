@@ -905,6 +905,38 @@ public class BFSHeatEngine {
             dimCache.remove(packedPos);
     }
 
+    /**
+     * Notify the engine that the block at this position has changed (placed, broken,
+     * or otherwise replaced). Drops the stale thermal-property cache entry and wakes
+     * the position plus any neighboring grid cells so conduction re-evaluates against
+     * the new block — without this, a hot neighbor in steady state never notices the
+     * change and a freshly placed block keeps being treated as the air it replaced.
+     */
+    public void onBlockChanged(ResourceLocation dim, long packedPos) {
+        ConcurrentHashMap<Long, CachedProps> dimCache = propsCache.get(dim);
+        if (dimCache != null)
+            dimCache.remove(packedPos);
+
+        positionDimensions.putIfAbsent(packedPos, dim);
+        if (frontierSet.add(packedPos)) frontier.add(packedPos);
+
+        ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
+        if (grid == null) return;
+
+        int bx = BlockPos.getX(packedPos);
+        int by = BlockPos.getY(packedPos);
+        int bz = BlockPos.getZ(packedPos);
+        for (int[] offset : NEIGHBORS) {
+            int ny = by + offset[1];
+            if (ny < -64 || ny > 319) continue;
+            long neighborPacked = BlockPos.asLong(bx + offset[0], ny, bz + offset[2]);
+            if (grid.containsKey(neighborPacked)) {
+                positionDimensions.putIfAbsent(neighborPacked, dim);
+                if (frontierSet.add(neighborPacked)) frontier.add(neighborPacked);
+            }
+        }
+    }
+
     private void trimPropsCache() {
         for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, CachedProps>> dimEntry : propsCache.entrySet()) {
             ResourceLocation dim = dimEntry.getKey();

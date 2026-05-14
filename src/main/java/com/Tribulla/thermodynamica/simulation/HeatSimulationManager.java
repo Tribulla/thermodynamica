@@ -243,6 +243,10 @@ public class HeatSimulationManager {
         transientUpdateQueue.put(new GlobalBlockPos(level.dimension().location(), pos), celsius);
     }
 
+    public void onBlockChanged(net.minecraft.world.level.Level level, BlockPos pos) {
+        engine.onBlockChanged(level.dimension().location(), pos.asLong());
+    }
+
     public void markActive(net.minecraft.world.level.Level level, BlockPos pos) {
         ResourceLocation dim = level.dimension().location();
         BlockState state = level.getBlockState(pos);

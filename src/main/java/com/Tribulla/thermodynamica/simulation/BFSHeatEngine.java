@@ -408,18 +408,42 @@ public class BFSHeatEngine {
     private void injectSources() {
         for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, Double>> dimEntry : sourceTemps.entrySet()) {
             ResourceLocation dim = dimEntry.getKey();
-            ConcurrentHashMap<Long, AtomicCell> grid = grids.computeIfAbsent(dim,
-                    k -> new ConcurrentHashMap<>());
+            ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
 
             for (Map.Entry<Long, Double> srcEntry : dimEntry.getValue().entrySet()) {
                 long pos = srcEntry.getKey();
                 double targetTemp = srcEntry.getValue();
-                AtomicCell cell = grid.computeIfAbsent(pos, k -> new AtomicCell(ambientTemp, 0.0));
+
+                // Fast path: the source is stable. applyDeltas resets source cells
+                // to sourceTemp exactly each tick, so for the vast majority of
+                // sources (lava sitting there doing nothing) the cell already holds
+                // targetTemp bit-for-bit and there's nothing to inject. Skipping
+                // here avoids the per-tick CHM churn (grid.computeIfAbsent,
+                // trackCellInChunk's two nested computeIfAbsents + set.add) that
+                // was dominating the server tick.
+                AtomicCell cell = (grid != null) ? grid.get(pos) : null;
+                if (cell != null && Double.doubleToRawLongBits(cell.getCurrent())
+                        == Double.doubleToRawLongBits(targetTemp)) {
+                    continue;
+                }
+
+                // Slow path: first injection, temp changed, or cell was evicted.
+                if (grid == null) {
+                    grid = grids.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
+                }
+                boolean newCell = false;
+                if (cell == null) {
+                    cell = grid.computeIfAbsent(pos, k -> new AtomicCell(ambientTemp, 0.0));
+                    newCell = true;
+                }
 
                 double oldTemp = cell.getCurrent();
                 cell.setCurrent(targetTemp);
 
-                trackCellInChunk(dim, pos);
+                if (newCell) {
+                    trackCellInChunk(dim, pos);
+                    positionDimensions.putIfAbsent(pos, dim);
+                }
 
                 fireTemperatureChange(dim, pos, oldTemp, targetTemp);
 

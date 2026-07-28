@@ -7,7 +7,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 public class HeatNetwork {
 
-        private static final String PROTOCOL_VERSION = "3";
+        private static final String PROTOCOL_VERSION = "4";
 
         public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
                         ResourceLocation.fromNamespaceAndPath(Thermodynamica.MODID, "main"),
@@ -37,6 +37,16 @@ public class HeatNetwork {
                                 HeatDebugOverlayPacket::encode,
                                 HeatDebugOverlayPacket::decode,
                                 HeatDebugOverlayPacket::handle);
+
+                CHANNEL.registerMessage(id++, ChunkFluidSyncPacket.class,
+                                ChunkFluidSyncPacket::encode,
+                                ChunkFluidSyncPacket::decode,
+                                ChunkFluidSyncPacket::handle);
+
+                CHANNEL.registerMessage(id++, FluidDebugOverlayPacket.class,
+                                FluidDebugOverlayPacket::encode,
+                                FluidDebugOverlayPacket::decode,
+                                FluidDebugOverlayPacket::handle);
 
                 Thermodynamica.LOGGER.debug("Network channel registered");
         }

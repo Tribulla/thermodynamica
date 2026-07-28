@@ -23,6 +23,19 @@ public class SimulationSettings implements ConfigSection {
     private int ticksPerRadiusStep = 2;
     private double temperatureRampRate = 0.35;
     private double ambientTemperature = 20.0;
+    private boolean fluidSimulationEnabled = false;
+    private int fluidSimulationIntervalTicks = 4;
+    private int fluidWorkBudgetPerTick = 20000;
+    private double fluidTimeBudgetMsPerTick = 100.0;
+    private double airBaselinePressure = 101325.0;
+    private double airHeatCapacity = 20.0;
+    private double airConductivity = 0.15;
+    private double pressureEqualizationRate = 0.08;
+    private double buoyancyStrength = 0.02;
+    private double heatAdvectionStrength = 0.25;
+    private double pressureDeltaThreshold = 5.0;
+    private int fluidSyncRange = 48;
+    private double fluidDebugSyncThreshold = 0.5;
 
     @Override
     public void load(JsonObject json) {
@@ -64,6 +77,32 @@ public class SimulationSettings implements ConfigSection {
             temperatureRampRate = Math.max(0.01, Math.min(1.0, json.get("temperature_ramp_rate").getAsDouble()));
         if (json.has("ambient_temperature"))
             ambientTemperature = json.get("ambient_temperature").getAsDouble();
+        if (json.has("fluid_simulation_enabled"))
+            fluidSimulationEnabled = json.get("fluid_simulation_enabled").getAsBoolean();
+        if (json.has("fluid_simulation_interval_ticks"))
+            fluidSimulationIntervalTicks = Math.max(1, json.get("fluid_simulation_interval_ticks").getAsInt());
+        if (json.has("fluid_work_budget_per_tick"))
+            fluidWorkBudgetPerTick = Math.max(100, json.get("fluid_work_budget_per_tick").getAsInt());
+        if (json.has("fluid_time_budget_ms_per_tick"))
+            fluidTimeBudgetMsPerTick = Math.max(0.1, json.get("fluid_time_budget_ms_per_tick").getAsDouble());
+        if (json.has("air_baseline_pressure"))
+            airBaselinePressure = Math.max(1.0, json.get("air_baseline_pressure").getAsDouble());
+        if (json.has("air_heat_capacity"))
+            airHeatCapacity = Math.max(0.01, json.get("air_heat_capacity").getAsDouble());
+        if (json.has("air_conductivity"))
+            airConductivity = Math.max(0.0, json.get("air_conductivity").getAsDouble());
+        if (json.has("pressure_equalization_rate"))
+            pressureEqualizationRate = Math.max(0.0, Math.min(1.0, json.get("pressure_equalization_rate").getAsDouble()));
+        if (json.has("buoyancy_strength"))
+            buoyancyStrength = Math.max(0.0, json.get("buoyancy_strength").getAsDouble());
+        if (json.has("heat_advection_strength"))
+            heatAdvectionStrength = Math.max(0.0, json.get("heat_advection_strength").getAsDouble());
+        if (json.has("pressure_delta_threshold"))
+            pressureDeltaThreshold = Math.max(0.0, json.get("pressure_delta_threshold").getAsDouble());
+        if (json.has("fluid_sync_range"))
+            fluidSyncRange = Math.max(0, json.get("fluid_sync_range").getAsInt());
+        if (json.has("fluid_debug_sync_threshold"))
+            fluidDebugSyncThreshold = Math.max(0.0, json.get("fluid_debug_sync_threshold").getAsDouble());
     }
 
     @Override
@@ -89,6 +128,19 @@ public class SimulationSettings implements ConfigSection {
         json.addProperty("ticks_per_radius_step", ticksPerRadiusStep);
         json.addProperty("temperature_ramp_rate", temperatureRampRate);
         json.addProperty("ambient_temperature", ambientTemperature);
+        json.addProperty("fluid_simulation_enabled", fluidSimulationEnabled);
+        json.addProperty("fluid_simulation_interval_ticks", fluidSimulationIntervalTicks);
+        json.addProperty("fluid_work_budget_per_tick", fluidWorkBudgetPerTick);
+        json.addProperty("fluid_time_budget_ms_per_tick", fluidTimeBudgetMsPerTick);
+        json.addProperty("air_baseline_pressure", airBaselinePressure);
+        json.addProperty("air_heat_capacity", airHeatCapacity);
+        json.addProperty("air_conductivity", airConductivity);
+        json.addProperty("pressure_equalization_rate", pressureEqualizationRate);
+        json.addProperty("buoyancy_strength", buoyancyStrength);
+        json.addProperty("heat_advection_strength", heatAdvectionStrength);
+        json.addProperty("pressure_delta_threshold", pressureDeltaThreshold);
+        json.addProperty("fluid_sync_range", fluidSyncRange);
+        json.addProperty("fluid_debug_sync_threshold", fluidDebugSyncThreshold);
 
         return json;
     }
@@ -167,5 +219,57 @@ public class SimulationSettings implements ConfigSection {
 
     public double getTemperatureRampRate() {
         return temperatureRampRate;
+    }
+
+    public boolean isFluidSimulationEnabled() {
+        return fluidSimulationEnabled;
+    }
+
+    public int getFluidSimulationIntervalTicks() {
+        return fluidSimulationIntervalTicks;
+    }
+
+    public int getFluidWorkBudgetPerTick() {
+        return fluidWorkBudgetPerTick;
+    }
+
+    public double getFluidTimeBudgetMsPerTick() {
+        return fluidTimeBudgetMsPerTick;
+    }
+
+    public double getAirBaselinePressure() {
+        return airBaselinePressure;
+    }
+
+    public double getAirHeatCapacity() {
+        return airHeatCapacity;
+    }
+
+    public double getAirConductivity() {
+        return airConductivity;
+    }
+
+    public double getPressureEqualizationRate() {
+        return pressureEqualizationRate;
+    }
+
+    public double getBuoyancyStrength() {
+        return buoyancyStrength;
+    }
+
+    public double getHeatAdvectionStrength() {
+        return heatAdvectionStrength;
+    }
+
+    public double getPressureDeltaThreshold() {
+        return pressureDeltaThreshold;
+    }
+
+    public int getFluidSyncRange() {
+        return fluidSyncRange;
+    }
+
+    public double getFluidDebugSyncThreshold() {
+        return fluidDebugSyncThreshold;
     }
 }

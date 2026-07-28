@@ -227,6 +227,11 @@ public class HeatSimulationManager {
         return OptionalDouble.of(exact.getAsDouble() + biomeOffset);
     }
 
+    public OptionalDouble getExactGridTemperature(net.minecraft.world.level.Level level, BlockPos pos) {
+        ResourceLocation dim = level.dimension().location();
+        return engine.getExactTemperature(dim, pos.asLong());
+    }
+
     public void setTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
         ResourceLocation dim = level.dimension().location();
         double ambient = settings.getAmbientTemperature();
@@ -241,6 +246,18 @@ public class HeatSimulationManager {
 
     public void setTransientTemperature(net.minecraft.world.level.Level level, BlockPos pos, double celsius) {
         transientUpdateQueue.put(new GlobalBlockPos(level.dimension().location(), pos), celsius);
+    }
+
+    public void addTransientTemperatureDelta(net.minecraft.world.level.Level level, BlockPos pos, double deltaCelsius) {
+        double current = getExactGridTemperature(level, pos).orElseGet(() -> {
+            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(level.getBlockState(pos).getBlock());
+            if (blockId == null) {
+                return settings.getAmbientTemperature();
+            }
+            return HeatAPI.get().getResolvedCelsius(blockId, level, pos)
+                    - configManager.getBiomeConfig().getOffset(level.getBiome(pos));
+        });
+        setTransientTemperature(level, pos, current + deltaCelsius);
     }
 
     public void onBlockChanged(net.minecraft.world.level.Level level, BlockPos pos) {

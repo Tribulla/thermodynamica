@@ -1,12 +1,15 @@
 package com.Tribulla.thermodynamica;
 
 import com.Tribulla.thermodynamica.api.HeatAPI;
+import com.Tribulla.thermodynamica.api.FluidAPI;
 import com.Tribulla.thermodynamica.api.impl.HeatAPIImpl;
+import com.Tribulla.thermodynamica.api.impl.FluidAPIImpl;
 import com.Tribulla.thermodynamica.api.targeting.HeatTargetingInternal;
 import com.Tribulla.thermodynamica.config.HeatConfigManager;
 import com.Tribulla.thermodynamica.debug.DebugRegistry;
 import com.Tribulla.thermodynamica.network.HeatNetwork;
 import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
+import com.Tribulla.thermodynamica.simulation.FluidSimulationManager;
 import com.Tribulla.thermodynamica.resource.ThermalPropertyResourceLoader;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
@@ -34,7 +37,9 @@ public class Thermodynamica {
 
     private final HeatConfigManager configManager;
     private final HeatAPIImpl heatApi;
+    private final FluidAPIImpl fluidApi;
     private HeatSimulationManager simulationManager;
+    private FluidSimulationManager fluidSimulationManager;
 
     public Thermodynamica() {
         instance = this;
@@ -42,7 +47,9 @@ public class Thermodynamica {
 
         this.configManager = new HeatConfigManager();
         this.heatApi = new HeatAPIImpl(configManager);
+        this.fluidApi = new FluidAPIImpl(configManager);
         HeatAPI.setInstance(heatApi);
+        FluidAPI.setInstance(fluidApi);
 
         DebugRegistry.register(modBus);
         HeatNetwork.register();
@@ -66,8 +73,11 @@ public class Thermodynamica {
         // LevelEvent.Load fires between ServerAboutToStartEvent and ServerStartingEvent,
         // and needs the manager to exist so saved data can be loaded.
         simulationManager = new HeatSimulationManager(event.getServer(), configManager);
+        fluidSimulationManager = new FluidSimulationManager(event.getServer(), configManager, simulationManager, fluidApi);
         simulationManager.start();
+        fluidSimulationManager.start();
         heatApi.setSimulationManager(simulationManager);
+        fluidApi.setSimulationManager(fluidSimulationManager);
         
         // Initialize targeting API with source provider
         HeatTargetingInternal.setSourceProvider((level, minCelsius) -> 
@@ -81,14 +91,23 @@ public class Thermodynamica {
 
         // Safety net: if LevelEvent.Load didn't attach saved data (e.g. ordering edge case),
         // load it now since the overworld is definitely available at this point.
-        if (simulationManager.getSavedData() == null) {
+        if (simulationManager.getSavedData() == null || (fluidSimulationManager != null && fluidSimulationManager.getSavedData() == null)) {
             net.minecraft.server.level.ServerLevel overworld = event.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
             if (overworld != null) {
-                com.Tribulla.thermodynamica.simulation.HeatSavedData data = overworld.getDataStorage().computeIfAbsent(
-                        (tag) -> com.Tribulla.thermodynamica.simulation.HeatSavedData.load(tag, simulationManager),
-                        () -> new com.Tribulla.thermodynamica.simulation.HeatSavedData(simulationManager),
-                        "thermodynamica_heat");
-                simulationManager.setSavedData(data);
+                if (simulationManager.getSavedData() == null) {
+                    com.Tribulla.thermodynamica.simulation.HeatSavedData data = overworld.getDataStorage().computeIfAbsent(
+                            (tag) -> com.Tribulla.thermodynamica.simulation.HeatSavedData.load(tag, simulationManager),
+                            () -> new com.Tribulla.thermodynamica.simulation.HeatSavedData(simulationManager),
+                            "thermodynamica_heat");
+                    simulationManager.setSavedData(data);
+                }
+                if (fluidSimulationManager != null && fluidSimulationManager.getSavedData() == null) {
+                    com.Tribulla.thermodynamica.simulation.FluidSavedData fluidData = overworld.getDataStorage().computeIfAbsent(
+                            (tag) -> com.Tribulla.thermodynamica.simulation.FluidSavedData.load(tag, fluidSimulationManager),
+                            () -> new com.Tribulla.thermodynamica.simulation.FluidSavedData(fluidSimulationManager),
+                            "thermodynamica_fluid");
+                    fluidSimulationManager.setSavedData(fluidData);
+                }
                 LOGGER.info("Thermodynamica saved data loaded (fallback path)");
             }
         }
@@ -105,6 +124,13 @@ public class Thermodynamica {
             }
             simulationManager.stopProcessing();
         }
+        if (fluidSimulationManager != null) {
+            com.Tribulla.thermodynamica.simulation.FluidSavedData data = fluidSimulationManager.getSavedData();
+            if (data != null) {
+                data.setDirty();
+            }
+            fluidSimulationManager.stopProcessing();
+        }
         LOGGER.info("Thermodynamica heat simulation engine stopping");
     }
 
@@ -113,6 +139,10 @@ public class Thermodynamica {
         if (simulationManager != null) {
             simulationManager.stop();
             simulationManager = null;
+        }
+        if (fluidSimulationManager != null) {
+            fluidSimulationManager.stop();
+            fluidSimulationManager = null;
         }
         LOGGER.info("Thermodynamica heat simulation engine stopped");
     }
@@ -139,5 +169,9 @@ public class Thermodynamica {
 
     public HeatSimulationManager getSimulationManager() {
         return simulationManager;
+    }
+
+    public FluidSimulationManager getFluidSimulationManager() {
+        return fluidSimulationManager;
     }
 }

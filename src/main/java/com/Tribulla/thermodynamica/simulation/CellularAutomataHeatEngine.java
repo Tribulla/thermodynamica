@@ -495,11 +495,18 @@ public class CellularAutomataHeatEngine {
 
             BlockState state = level.getBlockState(pos);
 
-            if (state.isAir())
+            if (state.isAir()) {
+                if (settings.isFluidSimulationEnabled()) {
+                    return AIR_INSULATING;
+                }
                 return airInsulates ? AIR_INSULATING : AIR_CONDUCTIVE;
+            }
 
             if (!state.getFluidState().isEmpty()) {
                 boolean water = state.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+                if (settings.isFluidSimulationEnabled()) {
+                    return water ? WATER_INSULATING : AIR_INSULATING;
+                }
                 if (airInsulates) {
                     return water ? WATER_INSULATING : AIR_INSULATING;
                 }

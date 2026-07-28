@@ -94,8 +94,8 @@ public final class HeatEnergyDebugOverlay {
                 GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ZERO);
         RenderSystem.disableCull();
+        RenderSystem.enableDepthTest();
         RenderSystem.depthMask(false);
-        RenderSystem.disableDepthTest();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -137,7 +137,6 @@ public final class HeatEnergyDebugOverlay {
 
         tesselator.end();
 
-        RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();
         RenderSystem.disableBlend();

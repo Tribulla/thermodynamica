@@ -52,8 +52,8 @@ public class FluidSyncManager {
                 continue;
             int configuredRange = settings.getFluidSyncRange();
             int serverViewRange = Math.max(2, player.server.getPlayerList().getViewDistance()) * 16;
-            int effectiveRange = Math.max(configuredRange, serverViewRange);
-            syncToPlayer(player, sim, threshold, effectiveRange);
+            int effectiveRange = Math.min(configuredRange > 0 ? configuredRange : 48, serverViewRange);
+            syncToPlayer(player, sim, threshold, effectiveRange, settings.getAmbientTemperature());
         }
     }
 
@@ -70,7 +70,7 @@ public class FluidSyncManager {
     }
 
     private static void syncToPlayer(ServerPlayer player, FluidSimulationManager sim,
-            double threshold, int range) {
+            double threshold, int range, double ambient) {
         ServerLevel level = player.serverLevel();
         ResourceLocation dim = level.dimension().location();
         BlockPos playerPos = player.blockPosition();
@@ -91,6 +91,11 @@ public class FluidSyncManager {
                     AirFluidEngine.FluidCellData cell = entry.getValue();
                     if (pos.distSqr(playerPos) > (long) range * range)
                         continue;
+                    if (Math.abs(cell.celsius() - ambient) < Math.max(threshold, 0.4)
+                            && cell.velocity().lengthSqr() < 0.0004) {
+                        playerLastSynced.remove(pos);
+                        continue;
+                    }
 
                     long fingerprint = fingerprint(cell, threshold);
                     Long last = playerLastSynced.get(pos);

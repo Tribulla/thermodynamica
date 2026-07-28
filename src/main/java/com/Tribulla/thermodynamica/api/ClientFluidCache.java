@@ -4,8 +4,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientFluidCache {
@@ -27,8 +28,8 @@ public class ClientFluidCache {
         return cache.get(pos);
     }
 
-    public static Map<BlockPos, CachedFluidEntry> getSnapshot() {
-        return new HashMap<>(cache);
+    public static Set<Map.Entry<BlockPos, CachedFluidEntry>> entries() {
+        return cache.entrySet();
     }
 
     public static int size() {
@@ -41,5 +42,16 @@ public class ClientFluidCache {
 
     public static void remove(BlockPos pos) {
         cache.remove(pos);
+    }
+
+    public static void prune(Vec3 center, double range) {
+        double rangeSqr = range * range;
+        Iterator<Map.Entry<BlockPos, CachedFluidEntry>> it = cache.entrySet().iterator();
+        while (it.hasNext()) {
+            CachedFluidEntry entry = it.next().getValue();
+            if (entry.worldCenter().distanceToSqr(center) > rangeSqr) {
+                it.remove();
+            }
+        }
     }
 }

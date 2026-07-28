@@ -85,8 +85,6 @@ public class FluidSimulationManager {
     }
 
     private void seedFromHeat() {
-        if (tickCounter % 5 != 0)
-            return;
         double ambient = settings.getAmbientTemperature();
         for (ChunkHeatKey key : loadedChunks) {
             Map<BlockPos, Double> temps = heatManager.getChunkTemperatures(key.getDimension(),

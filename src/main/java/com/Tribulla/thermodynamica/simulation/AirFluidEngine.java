@@ -204,44 +204,204 @@ public class AirFluidEngine {
             processed += active.size();
 
             List<Long> fluidCells = new ArrayList<>(active.size());
+            Set<Long> fluidSet = ConcurrentHashMap.newKeySet();
             for (long packed : active) {
                 BlockPos pos = BlockPos.of(packed);
                 if (!level.isLoaded(pos) || !level.getBlockState(pos).isAir()) {
                     evictCell(packed);
                     continue;
                 }
-                if (grid.containsKey(packed))
+                if (grid.containsKey(packed)) {
                     fluidCells.add(packed);
+                    fluidSet.add(packed);
+                }
             }
 
-            applyBuoyancy(level, grid, fluidCells);
-            advectTemperature(dim, level, grid, fluidCells);
-            exchangeWithSolids(dim, level, grid, fluidCells);
+            expandFront(dim, level, grid, fluidCells);
+            for (long packed : dimEntry.getValue()) {
+                if (fluidCells.size() >= workBudget)
+                    break;
+                if (!fluidSet.add(packed))
+                    continue;
+                if (!grid.containsKey(packed))
+                    continue;
+                BlockPos pos = BlockPos.of(packed);
+                if (!level.isLoaded(pos) || !level.getBlockState(pos).isAir()) {
+                    fluidSet.remove(packed);
+                    continue;
+                }
+                fluidCells.add(packed);
+            }
+
+            applyBuoyancy(dim, level, grid, fluidCells);
             enforceSolidWalls(level, grid, fluidCells);
             changed += projectPressure(level, grid, fluidCells);
+            transportTemperatureFlux(level, grid, fluidCells);
+            diffuseAirTemperature(level, grid, fluidCells);
+            exchangeWithSolids(dim, level, grid, fluidCells);
             applyDrag(grid, fluidCells);
             cullSettled(dim, grid, fluidCells);
-            expandFront(dim, level, grid, fluidCells);
         }
 
         flushSolidHeatDeltas();
         recordStats(start, processed, changed);
     }
 
-    private void applyBuoyancy(ServerLevel level,
+    private void applyBuoyancy(ResourceLocation dim, ServerLevel level,
             ConcurrentHashMap<Long, AirCell> grid, List<Long> cells) {
         for (long packed : cells) {
             AirCell cell = grid.get(packed);
             if (cell == null)
                 continue;
-            BlockPos above = BlockPos.of(packed).above();
-            if (!level.isLoaded(above) || !level.getBlockState(above).isAir()) {
-                cell.v = 0.0;
+
+            double dT = cell.temperature - ambientTemp;
+            if (Math.abs(dT) < 0.05)
                 continue;
+
+            double buoyancy = buoyancyStrength * (dT / 25.0) * DT;
+            BlockPos pos = BlockPos.of(packed);
+            BlockPos above = pos.above();
+            boolean blockedAbove = !level.isLoaded(above) || !level.getBlockState(above).isAir();
+
+            if (blockedAbove) {
+                cell.v = 0.0;
+                if (dT <= 0.5)
+                    continue;
+
+                double push = Math.abs(buoyancy) * 1.25;
+                int open = 0;
+                boolean east = isOpenAir(level, pos.east());
+                boolean west = isOpenAir(level, pos.west());
+                boolean south = isOpenAir(level, pos.south());
+                boolean north = isOpenAir(level, pos.north());
+                if (east) open++;
+                if (west) open++;
+                if (south) open++;
+                if (north) open++;
+                if (open == 0)
+                    continue;
+
+                double each = push / open;
+                if (east) {
+                    wakeAir(dim, pos.east().asLong());
+                    cell.u += each;
+                }
+                if (west) {
+                    wakeAir(dim, pos.west().asLong());
+                    AirCell westCell = grid.get(pos.west().asLong());
+                    if (westCell != null)
+                        westCell.u -= each;
+                }
+                if (south) {
+                    wakeAir(dim, pos.south().asLong());
+                    cell.w += each;
+                }
+                if (north) {
+                    wakeAir(dim, pos.north().asLong());
+                    AirCell northCell = grid.get(pos.north().asLong());
+                    if (northCell != null)
+                        northCell.w -= each;
+                }
+                cell.u = clamp(cell.u, -1.5, 1.5);
+                cell.w = clamp(cell.w, -1.5, 1.5);
+            } else {
+                cell.v += buoyancy;
+                cell.v = clamp(cell.v, -1.5, 1.5);
             }
-            double buoyancy = buoyancyStrength * ((cell.temperature - ambientTemp) / 100.0);
-            cell.v += buoyancy * DT;
-            cell.v = clamp(cell.v, -1.0, 1.0);
+        }
+    }
+
+    private static boolean isOpenAir(ServerLevel level, BlockPos pos) {
+        return level.isLoaded(pos) && level.getBlockState(pos).isAir();
+    }
+
+    private void diffuseAirTemperature(ServerLevel level,
+            ConcurrentHashMap<Long, AirCell> grid, List<Long> cells) {
+        if (cells.isEmpty())
+            return;
+
+        final double diff = Math.min(airConductivity * 0.35, 0.12);
+        if (diff <= 0.0)
+            return;
+
+        Map<Long, Double> next = new HashMap<>(cells.size() * 2);
+        for (long packed : cells) {
+            AirCell cell = grid.get(packed);
+            if (cell == null)
+                continue;
+            BlockPos pos = BlockPos.of(packed);
+            double sum = 0.0;
+            int count = 0;
+            for (int[] offset : NEIGHBORS) {
+                int ny = pos.getY() + offset[1];
+                if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y)
+                    continue;
+                BlockPos nPos = new BlockPos(pos.getX() + offset[0], ny, pos.getZ() + offset[2]);
+                if (!isOpenAir(level, nPos))
+                    continue;
+                AirCell neighbor = grid.get(nPos.asLong());
+                if (neighbor == null)
+                    continue;
+                sum += neighbor.temperature - cell.temperature;
+                count++;
+            }
+            if (count > 0)
+                next.put(packed, cell.temperature + diff * (sum / count));
+        }
+        for (Map.Entry<Long, Double> entry : next.entrySet()) {
+            AirCell cell = grid.get(entry.getKey());
+            if (cell != null)
+                cell.temperature = entry.getValue();
+        }
+    }
+
+    private void transportTemperatureFlux(ServerLevel level,
+            ConcurrentHashMap<Long, AirCell> grid, List<Long> cells) {
+        if (heatAdvectionStrength <= 0.0 || cells.isEmpty())
+            return;
+
+        Map<Long, Double> delta = new HashMap<>(cells.size() * 2);
+        double strength = Math.min(Math.max(heatAdvectionStrength, 0.15), 0.35);
+
+        for (long packed : cells) {
+            AirCell cell = grid.get(packed);
+            if (cell == null)
+                continue;
+            BlockPos pos = BlockPos.of(packed);
+
+            fluxAcrossFace(level, grid, delta, packed, cell, pos.east().asLong(), cell.u, strength);
+            fluxAcrossFace(level, grid, delta, packed, cell, pos.above().asLong(), cell.v, strength);
+            fluxAcrossFace(level, grid, delta, packed, cell, pos.south().asLong(), cell.w, strength);
+        }
+
+        for (Map.Entry<Long, Double> entry : delta.entrySet()) {
+            AirCell cell = grid.get(entry.getKey());
+            if (cell != null)
+                cell.temperature += entry.getValue();
+        }
+    }
+
+    private void fluxAcrossFace(ServerLevel level, ConcurrentHashMap<Long, AirCell> grid,
+            Map<Long, Double> delta, long packed, AirCell cell, long neighborPacked,
+            double faceVelocity, double strength) {
+        if (Math.abs(faceVelocity) < 1e-5)
+            return;
+        BlockPos nPos = BlockPos.of(neighborPacked);
+        if (!level.isLoaded(nPos) || !level.getBlockState(nPos).isAir())
+            return;
+        AirCell neighbor = grid.get(neighborPacked);
+        if (neighbor == null)
+            return;
+
+        double frac = clamp(Math.abs(faceVelocity) * DT * strength, 0.0, 0.25);
+        if (faceVelocity > 0.0) {
+            double transfer = frac * (cell.temperature - neighbor.temperature);
+            delta.merge(packed, -transfer, Double::sum);
+            delta.merge(neighborPacked, transfer, Double::sum);
+        } else {
+            double transfer = frac * (neighbor.temperature - cell.temperature);
+            delta.merge(neighborPacked, -transfer, Double::sum);
+            delta.merge(packed, transfer, Double::sum);
         }
     }
 
@@ -250,9 +410,9 @@ public class AirFluidEngine {
             AirCell cell = grid.get(packed);
             if (cell == null)
                 continue;
-            cell.u *= 0.92;
-            cell.v *= 0.92;
-            cell.w *= 0.92;
+            cell.u *= 0.97;
+            cell.v *= 0.995;
+            cell.w *= 0.97;
             if (Math.abs(cell.u) < 1e-4) cell.u = 0.0;
             if (Math.abs(cell.v) < 1e-4) cell.v = 0.0;
             if (Math.abs(cell.w) < 1e-4) cell.w = 0.0;
@@ -314,9 +474,13 @@ public class AirFluidEngine {
                 double dT = cell.temperature - solidTemp;
                 if (Math.abs(dT) < 0.01)
                     continue;
-                double heat = airConductivity * 0.5 * dT;
+
+                double rate = dT < 0.0
+                        ? airConductivity * 1.5   // solid hotter → air gains heat
+                        : airConductivity * 0.15; // air hotter → slow loss
+                double heat = rate * dT;
                 net -= heat;
-                queueSolidHeatDelta(dim, nPos.asLong(), heat / 50.0);
+                queueSolidHeatDelta(dim, nPos.asLong(), heat / Math.max(airHeatCapacity, 1.0));
             }
             if (Math.abs(net) > 1e-9) {
                 cell.temperature += net / Math.max(airHeatCapacity, 0.01);
@@ -632,9 +796,9 @@ public class AirFluidEngine {
             if (cell == null)
                 continue;
             Vec3 vel = sampleCellVelocity(grid, packed);
-            boolean settled = Math.abs(cell.temperature - ambientTemp) < 0.15
+            boolean settled = Math.abs(cell.temperature - ambientTemp) < 0.75
                     && Math.abs(cell.pressure - baselinePressure) < pressureDeltaThreshold
-                    && vel.lengthSqr() < 0.0001;
+                    && vel.lengthSqr() < 0.0004;
             if (settled) {
                 evictCell(packed);
             }
@@ -656,20 +820,22 @@ public class AirFluidEngine {
             }
 
             BlockPos pos = BlockPos.of(packed);
-            if (cell.u > 0.02)
+            boolean blockedAbove = !level.isLoaded(pos.above()) || !level.getBlockState(pos.above()).isAir();
+
+            if (cell.u > 0.01)
                 wakeAir(dim, pos.east().asLong());
-            if (cell.u < -0.02)
+            if (cell.u < -0.01)
                 wakeAir(dim, pos.west().asLong());
-            if (cell.v > 0.02 || dT > 1.0)
+            if (cell.v > 0.01 || (dT > 0.5 && !blockedAbove))
                 wakeAir(dim, pos.above().asLong());
-            if (cell.v < -0.02)
+            if (cell.v < -0.01 || dT < -0.5)
                 wakeAir(dim, pos.below().asLong());
-            if (cell.w > 0.02)
+            if (cell.w > 0.01)
                 wakeAir(dim, pos.south().asLong());
-            if (cell.w < -0.02)
+            if (cell.w < -0.01)
                 wakeAir(dim, pos.north().asLong());
 
-            if (Math.abs(dT) > 3.0) {
+            if ((blockedAbove && dT > 0.5) || Math.abs(dT) > 1.5) {
                 wakeAir(dim, pos.east().asLong());
                 wakeAir(dim, pos.west().asLong());
                 wakeAir(dim, pos.south().asLong());
@@ -714,7 +880,7 @@ public class AirFluidEngine {
         int bx = BlockPos.getX(solidPackedPos);
         int by = BlockPos.getY(solidPackedPos);
         int bz = BlockPos.getZ(solidPackedPos);
-        double seededTemp = ambientTemp + (sourceTemperature - ambientTemp) * 0.25;
+        double seededTemp = ambientTemp + (sourceTemperature - ambientTemp) * 0.65;
         for (int[] offset : NEIGHBORS) {
             int ny = by + offset[1];
             if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y)
@@ -736,9 +902,9 @@ public class AirFluidEngine {
         AirCell existing = grid.get(packedPos);
         if (existing == null) {
             grid.put(packedPos, new AirCell(initialTemp, initialPressure));
-        } else {
-            existing.temperature += (initialTemp - existing.temperature) * 0.08;
-            existing.pressure += (initialPressure - existing.pressure) * 0.08;
+        } else if (initialTemp > existing.temperature) {
+            existing.temperature += (initialTemp - existing.temperature) * 0.35;
+            existing.pressure += (initialPressure - existing.pressure) * 0.1;
         }
         positionDimensions.putIfAbsent(packedPos, dim);
         trackCellInChunk(dim, packedPos);

@@ -1,8 +1,8 @@
 package com.Tribulla.thermodynamica.resource;
 
 import com.Tribulla.thermodynamica.Thermodynamica;
-import com.Tribulla.thermodynamica.api.ThermalProperties;
 import com.Tribulla.thermodynamica.config.ThermalPropertiesRegistry;
+import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -25,29 +25,24 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> object, ResourceManager resourceManager,
             ProfilerFiller profiler) {
-        // Since we don't have a clearSource for thermal properties yet, we'll just
-        // overwrite
-        // OR we should ideally add a way to clear them if they came from data packs.
+        registry.clearDatapackEntries();
 
+        int files = 0;
         for (Map.Entry<ResourceLocation, JsonElement> entry : object.entrySet()) {
             ResourceLocation fileLocation = entry.getKey();
             try {
                 JsonObject json = entry.getValue().getAsJsonObject();
 
-                if (json.has("blocks")) {
-                    JsonObject blocks = json.getAsJsonObject("blocks");
-                    for (Map.Entry<String, JsonElement> blockEntry : blocks.entrySet()) {
-                        ResourceLocation blockId = ResourceLocation.tryParse(blockEntry.getKey());
-                        if (blockId != null) {
-                            registry.registerOverride(blockId, parseProps(blockEntry.getValue().getAsJsonObject()));
-                        }
-                    }
+                if (json.has("blocks") || json.has("tags")) {
+                    registry.loadDatapack(json);
+                    files++;
                 }
 
-                // Add support for direct block files if preferred:
-                // e.g. "thermodynamica:thermal_properties/minecraft/cobblestone.json"
-                if (json.has("conductivity") || json.has("heat_capacity") || json.has("temperature")) {
-                    registry.registerOverride(fileLocation, parseProps(json));
+                if (!json.has("blocks") && !json.has("tags")
+                        && (json.has("conductivity") || json.has("heat_capacity")
+                                || json.has("dissipation_rate") || json.has("temperature"))) {
+                    registry.registerDatapackBlock(fileLocation, ThermalPropertiesRegistry.parseProps(json));
+                    files++;
                 }
 
             } catch (Exception e) {
@@ -55,17 +50,16 @@ public class ThermalPropertyResourceLoader extends SimpleJsonResourceReloadListe
                         e.getMessage());
             }
         }
-        Thermodynamica.LOGGER.info("Loaded thermal properties from data packs");
-    }
 
-    private ThermalProperties parseProps(JsonObject obj) {
-        double conductivity = obj.has("conductivity") ? obj.get("conductivity").getAsDouble()
-                : ThermalProperties.DEFAULT_CONDUCTIVITY;
-        double heatCapacity = obj.has("heat_capacity") ? obj.get("heat_capacity").getAsDouble()
-                : ThermalProperties.DEFAULT_HEAT_CAPACITY;
-        double dissipationRate = obj.has("dissipation_rate") ? obj.get("dissipation_rate").getAsDouble()
-                : ThermalProperties.DEFAULT_DISSIPATION_RATE;
-        java.util.OptionalDouble temperature = obj.has("temperature") ? java.util.OptionalDouble.of(obj.get("temperature").getAsDouble()) : java.util.OptionalDouble.empty();
-        return new ThermalProperties(conductivity, heatCapacity, dissipationRate, temperature);
+        Thermodynamica instance = Thermodynamica.getInstance();
+        if (instance != null) {
+            HeatSimulationManager sim = instance.getSimulationManager();
+            if (sim != null) {
+                sim.invalidateAllThermalCaches();
+            }
+        }
+
+        Thermodynamica.LOGGER.info("Loaded {} thermal property datapack file(s) ({} entries)",
+                files, registry.getDatapackSize());
     }
 }

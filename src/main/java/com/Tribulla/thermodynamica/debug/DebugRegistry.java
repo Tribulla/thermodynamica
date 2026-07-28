@@ -36,6 +36,9 @@ public class DebugRegistry {
     public static final RegistryObject<Item> HEAT_INSPECTOR = ITEMS.register("heat_inspector",
             () -> new HeatInspectorItem(new Item.Properties().stacksTo(1)));
 
+    public static final RegistryObject<Item> ENERGY_INJECTOR = ITEMS.register("energy_injector",
+            () -> new EnergyInjectorItem(new Item.Properties().stacksTo(1)));
+
     public static void register(IEventBus modBus) {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);

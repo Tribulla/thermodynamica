@@ -24,7 +24,7 @@ import java.util.OptionalDouble;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 
-public class BFSHeatEngine {
+public class CellularAutomataHeatEngine {
 
     static final class AtomicCell {
         final AtomicLong current;
@@ -70,26 +70,39 @@ public class BFSHeatEngine {
         final double conductivity;
         final double heatCapacity;
         final double dissipationRate;
-        final boolean isAir;
+        final boolean isFluid;
         final boolean isWater;
+        final boolean conductive;
 
         CachedProps(double conductivity, double heatCapacity, double dissipationRate,
-                boolean isAir, boolean isWater) {
+                boolean isFluid, boolean isWater, boolean conductive) {
             this.conductivity = conductivity;
             this.heatCapacity = heatCapacity;
             this.dissipationRate = dissipationRate;
-            this.isAir = isAir;
+            this.isFluid = isFluid;
             this.isWater = isWater;
+            this.conductive = conductive;
         }
     }
 
-    private static final CachedProps AIR_PROPS = new CachedProps(0.0, Double.POSITIVE_INFINITY, 0.0, true, false);
-    private static final CachedProps WATER_PROPS = new CachedProps(0.0, Double.POSITIVE_INFINITY, 0.0, true, true);
+    private static final CachedProps AIR_INSULATING = new CachedProps(
+            0.0, Double.POSITIVE_INFINITY, 0.0, true, false, false);
+    private static final CachedProps WATER_INSULATING = new CachedProps(
+            0.0, Double.POSITIVE_INFINITY, 0.0, true, true, false);
+
+    private static final CachedProps AIR_CONDUCTIVE = new CachedProps(
+            0.5, 50.0, 0.15, true, false, true);
+    private static final CachedProps WATER_CONDUCTIVE = new CachedProps(
+            2.0, 100.0, 0.25, true, true, true);
+
     private static final CachedProps DEFAULT_PROPS = new CachedProps(
             ThermalProperties.defaults().getConductivity(),
             ThermalProperties.defaults().getHeatCapacity(),
             ThermalProperties.defaults().getDissipationRate(),
-            false, false);
+            false, false, true);
+
+    private static final int WORLD_MIN_Y = -64;
+    private static final int WORLD_MAX_Y = 319;
 
     private final ConcurrentHashMap<ResourceLocation, ConcurrentHashMap<Long, CachedProps>> propsCache = new ConcurrentHashMap<>();
 
@@ -98,22 +111,17 @@ public class BFSHeatEngine {
     private final SimulationSettings settings;
 
     private final ConcurrentHashMap<ResourceLocation, ConcurrentHashMap<Long, AtomicCell>> grids = new ConcurrentHashMap<>();
-
     private final ConcurrentHashMap<ResourceLocation, ConcurrentHashMap<Long, Set<Long>>> chunkCellMap = new ConcurrentHashMap<>();
-
     private final ConcurrentHashMap<ResourceLocation, Set<Long>> dirtyCells = new ConcurrentHashMap<>();
-
-    private volatile ConcurrentLinkedQueue<Long> frontier = new ConcurrentLinkedQueue<>();
-    private volatile Set<Long> frontierSet = ConcurrentHashMap.newKeySet();
-
-    private volatile ConcurrentLinkedQueue<Long> nextFrontier = new ConcurrentLinkedQueue<>();
-    private volatile Set<Long> nextFrontierSet = ConcurrentHashMap.newKeySet();
-
-    private volatile Set<Long> stepFrontierSnapshot = ConcurrentHashMap.newKeySet();
-
     private final ConcurrentHashMap<Long, ResourceLocation> positionDimensions = new ConcurrentHashMap<>();
-
     private final ConcurrentHashMap<ResourceLocation, ConcurrentHashMap<Long, Double>> sourceTemps = new ConcurrentHashMap<>();
+
+    private final Set<Long> activeSet = ConcurrentHashMap.newKeySet();
+
+    private ConcurrentLinkedQueue<Long> generationQueue = new ConcurrentLinkedQueue<>();
+    private final Set<Long> generationPending = ConcurrentHashMap.newKeySet();
+
+    private final Set<Long> pendingActivation = ConcurrentHashMap.newKeySet();
 
     private ForkJoinPool pool;
 
@@ -130,16 +138,17 @@ public class BFSHeatEngine {
     private double timeBudgetMs;
     private int simulationIntervalTicks;
     private volatile int adaptiveCellBudget = INITIAL_ADAPTIVE_BUDGET;
-    private int gameTicksSinceLastSwap = 0;
+    private int gameTicksSinceLastGeneration = 0;
+    private boolean generationInProgress = false;
 
     private volatile long lastTickNanos;
-    private volatile int lastFrontierSize;
+    private volatile int lastActiveSize;
     private volatile int lastBlocksProcessed;
     private final AtomicLong totalTickNanos = new AtomicLong();
     private final AtomicLong totalTicks = new AtomicLong();
     private final AtomicLong totalBlocksProcessed = new AtomicLong();
 
-    public BFSHeatEngine(MinecraftServer server, HeatConfigManager configManager) {
+    public CellularAutomataHeatEngine(MinecraftServer server, HeatConfigManager configManager) {
         this.server = server;
         this.configManager = configManager;
         this.settings = configManager.getSettings();
@@ -155,20 +164,17 @@ public class BFSHeatEngine {
         this.workBudget = settings.getWorkBudgetPerTick();
         this.timeBudgetMs = settings.getTimeBudgetMsPerTick();
         this.simulationIntervalTicks = Math.max(1, settings.getSimulationIntervalTicks());
-        // Keep the adaptive budget within whatever the new safety cap allows.
         if (adaptiveCellBudget > workBudget) adaptiveCellBudget = workBudget;
         if (adaptiveCellBudget < MIN_ADAPTIVE_BUDGET) adaptiveCellBudget = MIN_ADAPTIVE_BUDGET;
     }
-
-    private volatile boolean processing = false;
 
     public void start() {
         int threads = Math.max(1, settings.getWorkerThreads());
         pool = new ForkJoinPool(threads,
                 ForkJoinPool.defaultForkJoinWorkerThreadFactory,
-                (t, e) -> Thermodynamica.LOGGER.error("BFS worker error", e),
+                (t, e) -> Thermodynamica.LOGGER.error("CA heat worker error", e),
                 true);
-        Thermodynamica.LOGGER.info("BFS heat engine started with {} worker threads", threads);
+        Thermodynamica.LOGGER.info("Cellular automata heat engine started with {} worker threads", threads);
     }
 
     public void stopProcessing() {
@@ -176,7 +182,7 @@ public class BFSHeatEngine {
             pool.shutdownNow();
             pool = null;
         }
-        Thermodynamica.LOGGER.info("BFS heat engine processing stopped");
+        Thermodynamica.LOGGER.info("Cellular automata heat engine processing stopped");
     }
 
     public void stop() {
@@ -184,17 +190,17 @@ public class BFSHeatEngine {
         grids.clear();
         chunkCellMap.clear();
         dirtyCells.clear();
-        frontier.clear();
-        frontierSet.clear();
-        nextFrontier.clear();
-        nextFrontierSet.clear();
-        stepFrontierSnapshot.clear();
-        gameTicksSinceLastSwap = 0;
+        activeSet.clear();
+        generationQueue.clear();
+        generationPending.clear();
+        pendingActivation.clear();
+        generationInProgress = false;
+        gameTicksSinceLastGeneration = 0;
         adaptiveCellBudget = INITIAL_ADAPTIVE_BUDGET;
         positionDimensions.clear();
         sourceTemps.clear();
         propsCache.clear();
-        Thermodynamica.LOGGER.info("BFS heat engine stopped");
+        Thermodynamica.LOGGER.info("Cellular automata heat engine stopped");
     }
 
     public void tick() {
@@ -203,7 +209,6 @@ public class BFSHeatEngine {
 
         long start = System.nanoTime();
 
-        // Periodically clean up the property cache to prevent unbounded growth
         long tickNum = totalTicks.get();
         if (tickNum % 10 == 0) {
             trimPropsCache();
@@ -211,51 +216,31 @@ public class BFSHeatEngine {
 
         injectSources();
 
-        // --- Step swap pacing ------------------------------------------------------
-        // If the current step is finished (frontier empty) and enough game ticks have
-        // passed, promote nextFrontier and snapshot it for the next step. Increment
-        // the cooldown counter *before* the threshold check so a configured
-        // simulation_interval_ticks=N produces a swap every N game ticks (matching
-        // the prior fixed-interval behavior on average).
-        if (frontier.isEmpty()) {
-            if (nextFrontier.isEmpty()) {
-                // Truly idle — no work pending.
+        if (!generationInProgress) {
+            if (activeSet.isEmpty() && pendingActivation.isEmpty()) {
                 recordTickStats(start, 0, 0);
                 return;
             }
-            gameTicksSinceLastSwap++;
-            if (gameTicksSinceLastSwap < simulationIntervalTicks) {
+            gameTicksSinceLastGeneration++;
+            if (gameTicksSinceLastGeneration < simulationIntervalTicks) {
                 recordTickStats(start, 0, 0);
                 return;
             }
-            frontier = nextFrontier;
-            frontierSet = nextFrontierSet;
-            nextFrontier = new ConcurrentLinkedQueue<>();
-            nextFrontierSet = ConcurrentHashMap.newKeySet();
-            Set<Long> snap = ConcurrentHashMap.newKeySet(frontier.size());
-            snap.addAll(frontier);
-            stepFrontierSnapshot = snap;
-            gameTicksSinceLastSwap = 0;
-        } else if (stepFrontierSnapshot.isEmpty()) {
-            // Cold start (e.g. just after loadFromNBT): frontier is non-empty but we
-            // never got to take a snapshot. Build one now so pair-dedup is correct.
-            Set<Long> snap = ConcurrentHashMap.newKeySet(frontier.size());
-            snap.addAll(frontier);
-            stepFrontierSnapshot = snap;
+            beginGeneration();
+            gameTicksSinceLastGeneration = 0;
         }
 
-        // --- Pull this tick's slice (adaptive, capped by safety budget) -----------
         int cellsThisTick = Math.min(adaptiveCellBudget, workBudget);
         List<long[]> batches = new ArrayList<>();
         long[] batch = new long[BATCH_SIZE];
         int batchIdx = 0;
 
-        List<Long> tickPositions = new ArrayList<>();
+        List<Long> tickPositions = new ArrayList<>(Math.min(cellsThisTick, 1024));
         int count = 0;
         while (count < cellsThisTick) {
-            Long packed = frontier.poll();
+            Long packed = generationQueue.poll();
             if (packed == null) break;
-            frontierSet.remove(packed);
+            generationPending.remove(packed);
             tickPositions.add(packed);
             batch[batchIdx++] = packed;
             count++;
@@ -278,47 +263,65 @@ public class BFSHeatEngine {
         if (!batches.isEmpty()) {
             List<Future<?>> futures = new ArrayList<>(batches.size());
             for (long[] b : batches) {
-                futures.add(pool.submit(() -> computeBatch(b, stepFrontierSnapshot)));
+                futures.add(pool.submit(() -> computeBatch(b)));
             }
             for (Future<?> f : futures) {
                 try {
-                    f.get(5, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (java.util.concurrent.TimeoutException e) {
-                    Thermodynamica.LOGGER.warn("BFS compute timed out, skipping tick");
+                    f.get(5, TimeUnit.SECONDS);
+                } catch (TimeoutException e) {
+                    Thermodynamica.LOGGER.warn("CA heat compute timed out, skipping remaining batches");
                     break;
                 } catch (Exception e) {
-                    Thermodynamica.LOGGER.error("BFS compute error", e);
+                    Thermodynamica.LOGGER.error("CA heat compute error", e);
                 }
             }
         }
 
-        int blocksProcessed = applyDeltas();
+        int blocksProcessed = 0;
+        if (generationQueue.isEmpty() && generationPending.isEmpty()) {
+            blocksProcessed = commitGeneration();
+            generationInProgress = false;
+        }
 
         long elapsed = System.nanoTime() - start;
 
-        // --- Adaptive sizing ------------------------------------------------------
-        // Cheap exponential controller: if we breezed through the work, take more
-        // next time; if we blew the budget, take less. Only adjusts when we actually
-        // ran the budget — if the frontier was small we just exit early without
-        // changing the target.
         if (count >= cellsThisTick) {
             double elapsedMs = elapsed / 1_000_000.0;
             if (elapsedMs < timeBudgetMs * 0.5) {
-                int next = adaptiveCellBudget * 2;
-                adaptiveCellBudget = Math.min(next, workBudget);
+                adaptiveCellBudget = Math.min(adaptiveCellBudget * 2, workBudget);
             } else if (elapsedMs > timeBudgetMs * 1.5) {
-                int next = adaptiveCellBudget / 2;
-                adaptiveCellBudget = Math.max(next, MIN_ADAPTIVE_BUDGET);
+                adaptiveCellBudget = Math.max(adaptiveCellBudget / 2, MIN_ADAPTIVE_BUDGET);
             }
         }
 
         recordTickStats(start, count, blocksProcessed);
     }
 
-    private void recordTickStats(long startNanos, int frontierSize, int blocksProcessed) {
+    private void beginGeneration() {
+        for (long pos : pendingActivation) {
+            activeSet.add(pos);
+        }
+        pendingActivation.clear();
+
+        for (Map.Entry<ResourceLocation, ConcurrentHashMap<Long, Double>> dimEntry : sourceTemps.entrySet()) {
+            for (Long pos : dimEntry.getValue().keySet()) {
+                activeSet.add(pos);
+            }
+        }
+
+        generationQueue = new ConcurrentLinkedQueue<>();
+        generationPending.clear();
+        for (long pos : activeSet) {
+            generationQueue.add(pos);
+            generationPending.add(pos);
+        }
+        generationInProgress = true;
+    }
+
+    private void recordTickStats(long startNanos, int activeProcessed, int blocksProcessed) {
         long elapsed = System.nanoTime() - startNanos;
         lastTickNanos = elapsed;
-        lastFrontierSize = frontierSize;
+        lastActiveSize = activeProcessed;
         lastBlocksProcessed = blocksProcessed;
         totalTickNanos.addAndGet(elapsed);
         totalTicks.incrementAndGet();
@@ -376,6 +379,7 @@ public class BFSHeatEngine {
                     grid.put(pos, new AtomicCell(temp, 0.0));
                     positionDimensions.putIfAbsent(pos, dim);
                     trackCellInChunk(dim, pos);
+                    activeSet.add(pos);
                 }
             }
         }
@@ -393,7 +397,7 @@ public class BFSHeatEngine {
                     long pos = cellTag.getLong("Pos");
                     double temp = cellTag.getDouble("Temp");
                     dimSources.put(pos, temp);
-                    if (frontierSet.add(pos)) frontier.add(pos);
+                    activeSet.add(pos);
                     positionDimensions.putIfAbsent(pos, dim);
                     trackCellInChunk(dim, pos);
                 }
@@ -401,7 +405,7 @@ public class BFSHeatEngine {
         }
     }
 
-    public java.util.Map<ResourceLocation, ConcurrentHashMap<Long, Double>> getSourceTemps() {
+    public Map<ResourceLocation, ConcurrentHashMap<Long, Double>> getSourceTemps() {
         return sourceTemps;
     }
 
@@ -414,20 +418,13 @@ public class BFSHeatEngine {
                 long pos = srcEntry.getKey();
                 double targetTemp = srcEntry.getValue();
 
-                // Fast path: the source is stable. applyDeltas resets source cells
-                // to sourceTemp exactly each tick, so for the vast majority of
-                // sources (lava sitting there doing nothing) the cell already holds
-                // targetTemp bit-for-bit and there's nothing to inject. Skipping
-                // here avoids the per-tick CHM churn (grid.computeIfAbsent,
-                // trackCellInChunk's two nested computeIfAbsents + set.add) that
-                // was dominating the server tick.
                 AtomicCell cell = (grid != null) ? grid.get(pos) : null;
                 if (cell != null && Double.doubleToRawLongBits(cell.getCurrent())
                         == Double.doubleToRawLongBits(targetTemp)) {
+                    activeSet.add(pos);
                     continue;
                 }
 
-                // Slow path: first injection, temp changed, or cell was evicted.
                 if (grid == null) {
                     grid = grids.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
                 }
@@ -446,11 +443,8 @@ public class BFSHeatEngine {
                 }
 
                 fireTemperatureChange(dim, pos, oldTemp, targetTemp);
-
-                if (Math.abs(targetTemp - oldTemp) > deltaThreshold) {
-                    positionDimensions.putIfAbsent(pos, dim);
-                    if (frontierSet.add(pos)) frontier.add(pos);
-                }
+                activeSet.add(pos);
+                positionDimensions.putIfAbsent(pos, dim);
             }
         }
     }
@@ -462,8 +456,8 @@ public class BFSHeatEngine {
                 .add(pos);
     }
 
-    private void resolvePropertiesForTick(List<Long> frontierPositions) {
-        for (long packedPos : frontierPositions) {
+    private void resolvePropertiesForTick(List<Long> positions) {
+        for (long packedPos : positions) {
             ResourceLocation dim = positionDimensions.get(packedPos);
             if (dim == null)
                 continue;
@@ -479,7 +473,7 @@ public class BFSHeatEngine {
 
             for (int[] offset : NEIGHBORS) {
                 int ny = by + offset[1];
-                if (ny < -64 || ny > 319)
+                if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y)
                     continue;
 
                 long neighborPacked = BlockPos.asLong(
@@ -502,11 +496,14 @@ public class BFSHeatEngine {
             BlockState state = level.getBlockState(pos);
 
             if (state.isAir())
-                return AIR_PROPS;
+                return airInsulates ? AIR_INSULATING : AIR_CONDUCTIVE;
 
             if (!state.getFluidState().isEmpty()) {
                 boolean water = state.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
-                return water ? WATER_PROPS : AIR_PROPS;
+                if (airInsulates) {
+                    return water ? WATER_INSULATING : AIR_INSULATING;
+                }
+                return water ? WATER_CONDUCTIVE : AIR_CONDUCTIVE;
             }
 
             ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
@@ -516,7 +513,7 @@ public class BFSHeatEngine {
                 ThermalProperties props = registry.get(blockId);
                 if (props != null) {
                     return new CachedProps(props.getConductivity(), props.getHeatCapacity(),
-                            props.getDissipationRate(), false, false);
+                            props.getDissipationRate(), false, false, props.getConductivity() > 0.0);
                 }
             }
             return DEFAULT_PROPS;
@@ -533,7 +530,11 @@ public class BFSHeatEngine {
         return props != null ? props : DEFAULT_PROPS;
     }
 
-    // Centralized helper to fire TemperatureChangeEvent with biome offset and safety checks.
+    private CachedProps getOrResolveProps(ResourceLocation dim, long packedPos) {
+        return propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(packedPos, k -> resolveProps(dim, k));
+    }
+
     private void fireTemperatureChange(ResourceLocation dim, long packedPos, double oldTemp, double newTemp) {
         if (Math.abs(newTemp - oldTemp) <= deltaThreshold) return;
         HeatAPI api = HeatAPI.get();
@@ -549,7 +550,7 @@ public class BFSHeatEngine {
         }
     }
 
-    private void computeBatch(long[] batch, Set<Long> currentFrontier) {
+    private void computeBatch(long[] batch) {
         for (long packedPos : batch) {
             ResourceLocation dim = positionDimensions.get(packedPos);
             if (dim == null)
@@ -564,128 +565,114 @@ public class BFSHeatEngine {
                 continue;
 
             CachedProps myProps = getCachedProps(dim, packedPos);
-            if (myProps.isAir)
-                continue; // Air cells should not exist in the grid; defensive skip.
+            if (!myProps.conductive) {
+                continue;
+            }
 
-            double myTemp;
-            myTemp = myCell.getCurrent();
+            ConcurrentHashMap<Long, Double> dimSources = sourceTemps.get(dim);
+            if (dimSources != null && dimSources.containsKey(packedPos)) {
+                dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
+                continue;
+            }
+
+            double myTemp = myCell.getCurrent();
             double myCond = myProps.conductivity;
             double myCp = myProps.heatCapacity;
+            if (myCp <= 0.0 || !Double.isFinite(myCp))
+                continue;
 
             int bx = BlockPos.getX(packedPos);
             int by = BlockPos.getY(packedPos);
             int bz = BlockPos.getZ(packedPos);
+
+            double netHeat = 0.0; // heat entering this cell
+            double maxNeighborDiff = 0.0;
 
             for (int[] offset : NEIGHBORS) {
                 int nx = bx + offset[0];
                 int ny = by + offset[1];
                 int nz = bz + offset[2];
 
-                if (ny < -64 || ny > 319)
+                if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y)
                     continue;
 
                 long neighborPacked = BlockPos.asLong(nx, ny, nz);
                 CachedProps nProps = getCachedProps(dim, neighborPacked);
 
-                if (nProps.isAir) {
-                    applyNewtonianCooling(dim, packedPos, myCell, myTemp, myCp,
-                            myProps.dissipationRate, nProps.isWater);
+                if (!nProps.conductive) {
+                    double tempDiff = myTemp - ambientTemp;
+                    double absDiff = Math.abs(tempDiff);
+                    if (absDiff < deltaThreshold * 0.5)
+                        continue;
+
+                    double hEff = myProps.dissipationRate;
+                    if (nProps.isWater) {
+                        hEff *= waterTransferMult;
+                    }
+                    netHeat -= hEff * tempDiff * dissipationMult;
+                    if (absDiff > maxNeighborDiff) maxNeighborDiff = absDiff;
                     continue;
                 }
 
                 if (nProps.conductivity <= 0.0)
                     continue;
 
-                if (currentFrontier.contains(neighborPacked) && packedPos > neighborPacked) {
-                    continue;
-                }
-
                 AtomicCell neighborCell = grid.get(neighborPacked);
-                double neighborTemp;
-                if (neighborCell != null) {
-                    neighborTemp = neighborCell.getCurrent();
-                } else {
-                    neighborTemp = ambientTemp;
-                }
+                double neighborTemp = neighborCell != null ? neighborCell.getCurrent() : ambientTemp;
 
                 double tempDiff = myTemp - neighborTemp;
-                if (Math.abs(tempDiff) < deltaThreshold * 0.5)
+                double absDiff = Math.abs(tempDiff);
+                if (absDiff < deltaThreshold * 0.5)
                     continue;
 
-                if (neighborCell == null) {
-                    neighborCell = grid.computeIfAbsent(neighborPacked,
-                            k -> new AtomicCell(ambientTemp, 0.0));
+                if (absDiff > maxNeighborDiff) maxNeighborDiff = absDiff;
+
+                double kEff = harmonicMean(myCond, nProps.conductivity);
+                if (kEff <= 0.0)
+                    continue;
+
+                double q = kEff * tempDiff * dissipationMult;
+                netHeat -= q;
+
+                if (neighborCell == null && absDiff > deltaThreshold) {
+                    activateNeighbor(dim, neighborPacked, grid);
                 }
-
-                applyFourierConduction(dim, packedPos, neighborPacked, myCell, neighborCell,
-                        myCond, myCp, nProps.conductivity, nProps.heatCapacity, tempDiff);
             }
+
+            if (Math.abs(netHeat) < 1e-9)
+                continue;
+
+            double dT = netHeat / myCp;
+
+            if (maxNeighborDiff > 0.0) {
+                double maxAbs = maxNeighborDiff * 0.45;
+                if (Math.abs(dT) > maxAbs) {
+                    dT = Math.signum(dT) * maxAbs;
+                }
+            }
+
+            if (Math.abs(dT) < 1e-5)
+                continue;
+
+            myCell.addDelta(dT);
+            dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
         }
     }
 
-    private void applyFourierConduction(ResourceLocation dim, long fromPacked, long toPacked,
-            AtomicCell fromCell, AtomicCell toCell, double kFrom, double cpFrom,
-            double kTo, double cpTo, double tempDiff) {
-
-        double kEff = (kFrom + kTo) > 0.0 ? (2.0 * kFrom * kTo) / (kFrom + kTo) : 0.0;
-        if (kEff <= 0.0)
-            return;
-
-        double q = kEff * tempDiff * dissipationMult;
-
-        double dTfrom = q / cpFrom;
-        double dTto = q / cpTo;
-
-        double maxAbs = Math.abs(tempDiff) * 0.45;
-        double worst = Math.max(Math.abs(dTfrom), Math.abs(dTto));
-        if (worst > maxAbs && worst > 0.0) {
-            double scale = maxAbs / worst;
-            dTfrom *= scale;
-            dTto *= scale;
-        }
-
-        if (Math.abs(dTfrom) < 1e-5 && Math.abs(dTto) < 1e-5)
-            return;
-
-        fromCell.addDelta(-dTfrom);
-        toCell.addDelta(dTto);
-
-        trackCellInChunk(dim, toPacked);
-        positionDimensions.putIfAbsent(toPacked, dim);
-        Set<Long> dimDirty = dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet());
-        dimDirty.add(toPacked);
-        dimDirty.add(fromPacked);
+    private static double harmonicMean(double a, double b) {
+        double sum = a + b;
+        return sum > 0.0 ? (2.0 * a * b) / sum : 0.0;
     }
 
-    private void applyNewtonianCooling(ResourceLocation dim, long packedPos, AtomicCell myCell, double myTemp, double myCp, double h, boolean isWater) {
-
-        double tempDiff = myTemp - ambientTemp;
-        if (Math.abs(tempDiff) < deltaThreshold * 0.5)
-            return;
-
-        double hEff = h;
-        if (isWater) {
-            hEff *= waterTransferMult;
-        }
-
-        double q = hEff * tempDiff * dissipationMult;
-        double dT = q / myCp;
-
-        double maxAbs = Math.abs(tempDiff) * 0.45;
-        if (Math.abs(dT) > maxAbs) {
-            dT = Math.signum(dT) * maxAbs;
-        }
-
-        if (Math.abs(dT) < 1e-5)
-            return;
-
-        myCell.addDelta(-dT);
-
-        positionDimensions.putIfAbsent(packedPos, dim);
-        dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
+    private void activateNeighbor(ResourceLocation dim, long neighborPacked,
+            ConcurrentHashMap<Long, AtomicCell> grid) {
+        grid.computeIfAbsent(neighborPacked, k -> new AtomicCell(ambientTemp, 0.0));
+        trackCellInChunk(dim, neighborPacked);
+        positionDimensions.putIfAbsent(neighborPacked, dim);
+        pendingActivation.add(neighborPacked);
     }
 
-    private int applyDeltas() {
+    private int commitGeneration() {
         int changed = 0;
         List<Long> toEvict = null;
 
@@ -693,7 +680,6 @@ public class BFSHeatEngine {
             ResourceLocation dim = dimEntry.getKey();
             Set<Long> dirties = dimEntry.getValue();
             ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
-
             if (grid == null)
                 continue;
 
@@ -702,8 +688,7 @@ public class BFSHeatEngine {
                 if (cell == null)
                     continue;
 
-                double delta;
-                delta = cell.getDelta();
+                double delta = cell.getDelta();
                 cell.setDelta(0.0);
 
                 ConcurrentHashMap<Long, Double> dimSources = sourceTemps.get(dim);
@@ -714,38 +699,30 @@ public class BFSHeatEngine {
                     if (sourceTemp != null) {
                         double oldTemp = cell.getCurrent();
                         cell.setCurrent(sourceTemp);
-
                         fireTemperatureChange(dim, pos, oldTemp, sourceTemp);
                     }
                     changed++;
-                    if (Math.abs(delta) > (deltaThreshold * 0.5)) {
-                        positionDimensions.putIfAbsent(pos, dim);
-                        if (nextFrontierSet.add(pos)) nextFrontier.add(pos);
-                    }
+                    activeSet.add(pos);
+                    wakeNeighbors(dim, pos, grid);
                 } else if (Math.abs(delta) > 0.001) {
                     double oldTemp = cell.getCurrent();
                     double newTemp = oldTemp + delta;
                     cell.setCurrent(newTemp);
                     changed++;
-
                     fireTemperatureChange(dim, pos, oldTemp, newTemp);
-
-                    if (Math.abs(delta) > (deltaThreshold * 0.1)) {
-                        positionDimensions.putIfAbsent(pos, dim);
-                        if (nextFrontierSet.add(pos)) nextFrontier.add(pos);
+                    activeSet.add(pos);
+                    if (Math.abs(delta) > deltaThreshold * 0.1) {
+                        wakeNeighbors(dim, pos, grid);
                     }
                 }
 
-                double current;
-                current = cell.getCurrent();
-
-                if (Math.abs(current - ambientTemp) < deltaThreshold
+                double current = cell.getCurrent();
+                if (!isSource
+                        && Math.abs(current - ambientTemp) < deltaThreshold
                         && Math.abs(delta) < 0.01) {
-                    if (!isSource) {
-                        if (toEvict == null)
-                            toEvict = new ArrayList<>();
-                        toEvict.add(pos);
-                    }
+                    if (toEvict == null)
+                        toEvict = new ArrayList<>();
+                    toEvict.add(pos);
                 }
             }
             dirties.clear();
@@ -754,6 +731,7 @@ public class BFSHeatEngine {
                 for (long pos : toEvict) {
                     grid.remove(pos);
                     positionDimensions.remove(pos);
+                    activeSet.remove(pos);
                     ConcurrentHashMap<Long, CachedProps> dimCache = propsCache.get(dim);
                     if (dimCache != null)
                         dimCache.remove(pos);
@@ -770,7 +748,32 @@ public class BFSHeatEngine {
             }
         }
 
+        for (long pos : pendingActivation) {
+            activeSet.add(pos);
+        }
+        pendingActivation.clear();
+
         return changed;
+    }
+
+    private void wakeNeighbors(ResourceLocation dim, long packedPos,
+            ConcurrentHashMap<Long, AtomicCell> grid) {
+        int bx = BlockPos.getX(packedPos);
+        int by = BlockPos.getY(packedPos);
+        int bz = BlockPos.getZ(packedPos);
+        for (int[] offset : NEIGHBORS) {
+            int ny = by + offset[1];
+            if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y) continue;
+            long neighborPacked = BlockPos.asLong(bx + offset[0], ny, bz + offset[2]);
+            CachedProps nProps = getOrResolveProps(dim, neighborPacked);
+            if (!nProps.conductive || nProps.conductivity <= 0.0)
+                continue;
+            if (grid.containsKey(neighborPacked)) {
+                activeSet.add(neighborPacked);
+            } else {
+                activateNeighbor(dim, neighborPacked, grid);
+            }
+        }
     }
 
     private ServerLevel getLevelForDim(ResourceLocation dim) {
@@ -809,11 +812,12 @@ public class BFSHeatEngine {
 
         trackCellInChunk(dim, packedPos);
         positionDimensions.putIfAbsent(packedPos, dim);
-        if (frontierSet.add(packedPos)) frontier.add(packedPos);
+        activeSet.add(packedPos);
 
         propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>())
                 .put(packedPos, resolveProps(dim, packedPos));
 
+        wakeNeighbors(dim, packedPos, grid);
         fireTemperatureChange(dim, packedPos, oldTemp, temperature);
     }
 
@@ -837,10 +841,8 @@ public class BFSHeatEngine {
                 .putIfAbsent(packedPos, resolveProps(dim, packedPos));
 
         dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
-
-        if (Math.abs(temperature - oldTemp) > deltaThreshold) {
-            if (frontierSet.add(packedPos)) frontier.add(packedPos);
-        }
+        activeSet.add(packedPos);
+        wakeNeighbors(dim, packedPos, grid);
 
         fireTemperatureChange(dim, packedPos, oldTemp, temperature);
     }
@@ -854,17 +856,16 @@ public class BFSHeatEngine {
         ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
         if (grid != null) {
             AtomicCell cell = grid.get(packedPos);
-                if (cell != null) {
+            if (cell != null) {
                 double oldTemp = cell.getCurrent();
                 cell.setCurrent(ambientTemp);
                 cell.setDelta(0.0);
-
                 fireTemperatureChange(dim, packedPos, oldTemp, ambientTemp);
             }
         }
 
         positionDimensions.putIfAbsent(packedPos, dim);
-        if (frontierSet.add(packedPos)) frontier.add(packedPos);
+        activeSet.add(packedPos);
         dirtyCells.computeIfAbsent(dim, k -> ConcurrentHashMap.newKeySet()).add(packedPos);
     }
 
@@ -879,7 +880,6 @@ public class BFSHeatEngine {
             return;
 
         long chunkPosAsLong = ChunkPos.asLong(chunkX, chunkZ);
-
         Set<Long> cellsInChunk = (chunkCells != null) ? chunkCells.remove(chunkPosAsLong) : null;
 
         if (cellsInChunk != null && !cellsInChunk.isEmpty()) {
@@ -893,8 +893,9 @@ public class BFSHeatEngine {
                     dimSources.remove(pos);
                 if (dirties != null)
                     dirties.remove(pos);
-                if (frontierSet.remove(pos)) frontier.remove(pos);
-                if (nextFrontierSet.remove(pos)) nextFrontier.remove(pos);
+                activeSet.remove(pos);
+                generationPending.remove(pos);
+                pendingActivation.remove(pos);
             }
         }
     }
@@ -929,34 +930,40 @@ public class BFSHeatEngine {
             dimCache.remove(packedPos);
     }
 
-    /**
-     * Notify the engine that the block at this position has changed (placed, broken,
-     * or otherwise replaced). Drops the stale thermal-property cache entry and wakes
-     * the position plus any neighboring grid cells so conduction re-evaluates against
-     * the new block — without this, a hot neighbor in steady state never notices the
-     * change and a freshly placed block keeps being treated as the air it replaced.
-     */
+    public void clearPropsCache() {
+        propsCache.clear();
+    }
+
     public void onBlockChanged(ResourceLocation dim, long packedPos) {
         ConcurrentHashMap<Long, CachedProps> dimCache = propsCache.get(dim);
         if (dimCache != null)
             dimCache.remove(packedPos);
 
         positionDimensions.putIfAbsent(packedPos, dim);
-        if (frontierSet.add(packedPos)) frontier.add(packedPos);
 
-        ConcurrentHashMap<Long, AtomicCell> grid = grids.get(dim);
-        if (grid == null) return;
+        ConcurrentHashMap<Long, AtomicCell> grid = grids.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
+        CachedProps props = resolveProps(dim, packedPos);
+        propsCache.computeIfAbsent(dim, k -> new ConcurrentHashMap<>()).put(packedPos, props);
+
+        if (props.conductive) {
+            grid.computeIfAbsent(packedPos, k -> new AtomicCell(ambientTemp, 0.0));
+            trackCellInChunk(dim, packedPos);
+            activeSet.add(packedPos);
+        } else {
+            grid.remove(packedPos);
+            activeSet.remove(packedPos);
+        }
 
         int bx = BlockPos.getX(packedPos);
         int by = BlockPos.getY(packedPos);
         int bz = BlockPos.getZ(packedPos);
         for (int[] offset : NEIGHBORS) {
             int ny = by + offset[1];
-            if (ny < -64 || ny > 319) continue;
+            if (ny < WORLD_MIN_Y || ny > WORLD_MAX_Y) continue;
             long neighborPacked = BlockPos.asLong(bx + offset[0], ny, bz + offset[2]);
             if (grid.containsKey(neighborPacked)) {
                 positionDimensions.putIfAbsent(neighborPacked, dim);
-                if (frontierSet.add(neighborPacked)) frontier.add(neighborPacked);
+                activeSet.add(neighborPacked);
             }
         }
     }
@@ -991,8 +998,8 @@ public class BFSHeatEngine {
         return lastTickNanos / 1_000_000.0;
     }
 
-    public int getLastFrontierSize() {
-        return lastFrontierSize;
+    public int getLastActiveSize() {
+        return lastActiveSize;
     }
 
     public int getLastBlocksProcessed() {
@@ -1030,8 +1037,8 @@ public class BFSHeatEngine {
         return total;
     }
 
-    public int getCurrentFrontierSize() {
-        return frontier.size();
+    public int getActiveCellCount() {
+        return activeSet.size();
     }
 
     public double getAmbientTemp() {

@@ -29,7 +29,7 @@ public class HeatSimulationManager {
     private final MinecraftServer server;
     private final HeatConfigManager configManager;
     private final SimulationSettings settings;
-    private final BFSHeatEngine engine;
+    private final CellularAutomataHeatEngine engine;
 
     private final ConcurrentHashMap<ResourceLocation, ConcurrentHashMap<Long, SourceInfo>> sourceIndex = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ChunkHeatKey, Set<Long>> chunkSourceIndex = new ConcurrentHashMap<>();
@@ -56,13 +56,13 @@ public class HeatSimulationManager {
         this.server = server;
         this.configManager = configManager;
         this.settings = configManager.getSettings();
-        this.engine = new BFSHeatEngine(server, configManager);
+        this.engine = new CellularAutomataHeatEngine(server, configManager);
     }
 
     public void start() {
         running.set(true);
         engine.start();
-        Thermodynamica.LOGGER.info("Heat simulation started (BFS engine, inline; {} ms/tick budget)",
+        Thermodynamica.LOGGER.info("Heat simulation started (cellular automata; {} ms/tick budget)",
                 settings.getTimeBudgetMsPerTick());
     }
 
@@ -245,6 +245,10 @@ public class HeatSimulationManager {
 
     public void onBlockChanged(net.minecraft.world.level.Level level, BlockPos pos) {
         engine.onBlockChanged(level.dimension().location(), pos.asLong());
+    }
+
+    public void invalidateAllThermalCaches() {
+        engine.clearPropsCache();
     }
 
     public void markActive(net.minecraft.world.level.Level level, BlockPos pos) {
@@ -464,7 +468,7 @@ public class HeatSimulationManager {
     }
 
     public int getPropagatingSourceCount() {
-        return engine.getCurrentFrontierSize();
+        return engine.getActiveCellCount();
     }
 
     public double getSimulationTPS() {
@@ -497,11 +501,11 @@ public class HeatSimulationManager {
         BlockPos sp = BlockPos.of(nearestPacked);
         return String.format(
                 "Nearest source at (%d,%d,%d) dist=%.1f | target=%.1f grid=%.1f | " +
-                        "k=%.2f Cp=%.0f | frontier=%d grid=%d",
+                        "k=%.2f Cp=%.0f | active=%d grid=%d",
                 sp.getX(), sp.getY(), sp.getZ(), Math.sqrt(nearestDist),
                 nearestInfo.temperature(), engine.getTemperature(dim, nearestPacked),
                 nearestInfo.conductivity(), nearestInfo.heatCapacity(),
-                engine.getCurrentFrontierSize(), engine.getGridSize());
+                engine.getActiveCellCount(), engine.getGridSize());
     }
 
     /**

@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
@@ -43,13 +44,26 @@ public class HeatSyncManager {
 
         HeatSimulationManager sim = instance.getSimulationManager();
         double threshold = settings.getSyncThreshold();
-        boolean debug = settings.isDebugMode();
 
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             int configuredRange = settings.getSyncRange();
             int serverViewRange = Math.max(2, player.server.getPlayerList().getViewDistance()) * 16;
             int effectiveRange = Math.max(configuredRange, serverViewRange);
-            syncToPlayer(player, sim, threshold, effectiveRange, debug);
+            boolean debug = settings.isDebugMode() || HeatDebugPlayers.isEnabled(player);
+            double playerThreshold = debug ? 0.0 : threshold;
+            syncToPlayer(player, sim, playerThreshold, effectiveRange, debug);
+        }
+    }
+
+    public static void forceResync(ServerPlayer player) {
+        lastSynced.remove(player);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            lastSynced.remove(player);
+            HeatDebugPlayers.remove(player);
         }
     }
 
@@ -144,9 +158,5 @@ public class HeatSyncManager {
                 }
             }
         }
-    }
-
-    public static void onPlayerDisconnect(ServerPlayer player) {
-        lastSynced.remove(player);
     }
 }

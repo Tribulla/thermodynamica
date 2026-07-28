@@ -1,6 +1,10 @@
 package com.Tribulla.thermodynamica;
 
 import com.Tribulla.thermodynamica.simulation.HeatSimulationManager;
+import com.Tribulla.thermodynamica.network.HeatDebugOverlayPacket;
+import com.Tribulla.thermodynamica.network.HeatDebugPlayers;
+import com.Tribulla.thermodynamica.network.HeatNetwork;
+import com.Tribulla.thermodynamica.network.HeatSyncManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 
@@ -12,6 +16,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.network.PacketDistributor;
 
 public class ThermodynamicaCommand {
 
@@ -129,7 +134,7 @@ public class ThermodynamicaCommand {
                                                 .withStyle(ChatFormatting.YELLOW)),
                                 false);
 
-                source.sendSuccess(() -> Component.literal("Propagating: ")
+                source.sendSuccess(() -> Component.literal("Active cells: ")
                                 .withStyle(ChatFormatting.GRAY)
                                 .append(Component.literal(String.valueOf(propagating))
                                                 .withStyle(propagating > 0 ? ChatFormatting.YELLOW
@@ -165,14 +170,30 @@ public class ThermodynamicaCommand {
                         return 0;
                 }
 
+                boolean enabled = HeatDebugPlayers.toggle(player);
+                HeatSyncManager.forceResync(player);
+                HeatNetwork.CHANNEL.send(
+                                PacketDistributor.PLAYER.with(() -> player),
+                                new HeatDebugOverlayPacket(enabled));
+
                 BlockPos pos = player.blockPosition();
                 ResourceLocation dim = player.level().dimension().location();
-
                 String debugInfo = sim.getNearestSourceDebug(dim, pos);
 
                 MutableComponent header = Component.literal("=== Thermodynamica Debug ===")
                                 .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD);
                 source.sendSuccess(() -> header, false);
+
+                source.sendSuccess(() -> Component.literal("Energy overlay: ")
+                                .withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(enabled ? "ON" : "OFF")
+                                                .withStyle(enabled ? ChatFormatting.GREEN : ChatFormatting.RED))
+                                .append(Component.literal(enabled
+                                                ? "  (0 J black → 5 MJ white; cold=blue, hot=red)"
+                                                : "")
+                                                .withStyle(ChatFormatting.DARK_GRAY)),
+                                false);
+
                 source.sendSuccess(() -> Component.literal(debugInfo)
                                 .withStyle(ChatFormatting.WHITE), false);
 
